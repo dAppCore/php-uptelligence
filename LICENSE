@@ -1,0 +1,108 @@
+Core PHP Framework Template
+===========================
+
+Copyright (c) 2026 Host UK / Snider
+
+This project uses a dual-licensing approach:
+
+
+1. CORE FRAMEWORK CODE (EUPL-1.2)
+---------------------------------
+
+The Core PHP Framework packages (host-uk/core, host-uk/core-admin,
+host-uk/core-api, host-uk/core-mcp) and any code within the `Core\`
+namespace are licensed under the European Union Public Licence v1.2
+(EUPL-1.2).
+
+The full EUPL-1.2 license text is available at:
+https://joinup.ec.europa.eu/collection/eupl/eupl-text-eupl-12
+
+And in the Core PHP Framework repository:
+https://github.com/host-uk/core-php/blob/main/LICENSE
+
+
+2. APPLICATION CODE EXCEPTION
+-----------------------------
+
+As the copyright holder, we grant the following additional permission:
+
+Code you create within the following directories is EXEMPT from the
+EUPL-1.2 copyleft requirements and may be licensed under any terms
+you choose (including proprietary licenses):
+
+    app/Mod/          - Your feature modules
+    app/Website/      - Your website/domain modules
+    app/Service/      - Your service classes
+    database/         - Your migrations, seeders, factories
+    resources/        - Your views, assets, translations
+    routes/           - Your route definitions
+    tests/            - Your test files
+    config/           - Your configuration files (except config/core.php)
+
+This exception applies ONLY to original code you create in these
+directories. It does NOT apply to:
+
+    - Modified copies of Core framework code
+    - Code that extends or overrides the `Core\` namespace
+    - Derivative works of the Core framework itself
+
+
+3. CORE NAMESPACE MODIFICATIONS
+-------------------------------
+
+If you create local overrides or extensions within the `Core\` namespace
+(e.g., in `app/Core/`), those modifications ARE subject to EUPL-1.2 and
+its copyleft requirements.
+
+We encourage you to submit such modifications as pull requests to:
+https://github.com/host-uk/core-php
+
+This requirement constitutes the consideration for the license grant
+herein. The Core PHP Framework is not provided without cost; rather,
+the license fee is paid in kind through the contribution of improvements
+to the community. By using this software, you acknowledge and agree that
+modifications to the Core\ namespace shall be made available to the
+community under the same terms, ensuring that all users benefit from
+collective improvements. This reciprocal obligation is a fundamental
+condition of the license grant and not merely a request.
+
+
+4. SUMMARY
+----------
+
+┌─────────────────────────────────────────────────────────────────────┐
+│  Location              │  License        │  Copyleft Required?     │
+├─────────────────────────────────────────────────────────────────────┤
+│  vendor/host-uk/*      │  EUPL-1.2       │  Yes                    │
+│  app/Core/*            │  EUPL-1.2       │  Yes (submit as PR)     │
+│  Core\ namespace       │  EUPL-1.2       │  Yes                    │
+├─────────────────────────────────────────────────────────────────────┤
+│  app/Mod/*             │  Your choice    │  No                     │
+│  app/Website/*         │  Your choice    │  No                     │
+│  app/Service/*         │  Your choice    │  No                     │
+│  database/*            │  Your choice    │  No                     │
+│  resources/*           │  Your choice    │  No                     │
+│  routes/*              │  Your choice    │  No                     │
+│  tests/*               │  Your choice    │  No                     │
+└─────────────────────────────────────────────────────────────────────┘
+
+
+5. WARRANTY DISCLAIMER
+----------------------
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
+
+
+6. QUESTIONS
+------------
+
+If you have questions about licensing, contact: hello@host.uk.com
+
+For the full EUPL-1.2 text, see:
+https://github.com/host-uk/core-php/blob/main/LICENSE

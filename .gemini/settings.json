@@ -1,0 +1,12 @@
+{
+  "$schema": "https://schema.gemini.google.dev/settings.json",
+  "codeAssist": {
+    "enabled": true,
+    "contextFiles": [
+      "GEMINI.md",
+      "CLAUDE.md",
+      "composer.json",
+      "config/core.php"
+    ]
+  }
+}
