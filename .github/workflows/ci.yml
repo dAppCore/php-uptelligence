@@ -1,3 +1,6 @@
+# CI workflow for library packages (host-uk/core-*, etc.)
+# Copy this to .github/workflows/ci.yml in library repos
+
 name: CI
 
 on:
@@ -8,19 +11,22 @@ on:
 
 jobs:
   tests:
-    if: github.event.repository.visibility == 'public'
     runs-on: ubuntu-latest
 
     strategy:
       fail-fast: true
       matrix:
         php: [8.2, 8.3, 8.4]
+        laravel: [11.*, 12.*]
+        exclude:
+          - php: 8.2
+            laravel: 12.*
 
-    name: PHP ${{ matrix.php }}
+    name: PHP ${{ matrix.php }} / Laravel ${{ matrix.laravel }}
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
 
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
@@ -30,7 +36,9 @@ jobs:
           coverage: pcov
 
       - name: Install dependencies
-        run: composer install --prefer-dist --no-interaction --no-progress
+        run: |
+          composer require "laravel/framework:${{ matrix.laravel }}" --no-interaction --no-update
+          composer update --prefer-dist --no-interaction --no-progress
 
       - name: Run Pint
         run: vendor/bin/pint --test
@@ -39,30 +47,9 @@ jobs:
         run: vendor/bin/pest --ci --coverage --coverage-clover coverage.xml
 
       - name: Upload coverage to Codecov
-        if: matrix.php == '8.3'
-        uses: codecov/codecov-action@v5
+        if: matrix.php == '8.3' && matrix.laravel == '12.*'
+        uses: codecov/codecov-action@v4
         with:
           files: coverage.xml
           fail_ci_if_error: false
           token: ${{ secrets.CODECOV_TOKEN }}
-
-  assets:
-    if: github.event.repository.visibility == 'public'
-    runs-on: ubuntu-latest
-    name: Assets
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Build assets
-        run: npm run build
