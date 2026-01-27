@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Core\Mod\Uptelligence\Models;
 
-use Core\Mod\Tenant\Concerns\BelongsToWorkspace;
-use Core\Mod\Tenant\Models\User;
+use Core\Tenant\Concerns\BelongsToWorkspace;
+use Core\Tenant\Models\User;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
