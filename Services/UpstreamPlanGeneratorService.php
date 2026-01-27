@@ -2,12 +2,12 @@
 
 declare(strict_types=1);
 
-namespace Core\Uptelligence\Services;
+namespace Core\Mod\Uptelligence\Services;
 
 use Illuminate\Support\Collection;
-use Core\Uptelligence\Models\UpstreamTodo;
-use Core\Uptelligence\Models\Vendor;
-use Core\Uptelligence\Models\VersionRelease;
+use Core\Mod\Uptelligence\Models\UpstreamTodo;
+use Core\Mod\Uptelligence\Models\Vendor;
+use Core\Mod\Uptelligence\Models\VersionRelease;
 
 /**
  * Upstream Plan Generator Service - creates agent plans from version release analysis.

@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Core\Uptelligence\Models;
+namespace Core\Mod\Uptelligence\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;

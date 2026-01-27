@@ -2,13 +2,13 @@
 
 declare(strict_types=1);
 
-namespace Core\Uptelligence\Console;
+namespace Core\Mod\Uptelligence\Console;
 
 use Illuminate\Console\Command;
-use Core\Uptelligence\Models\Vendor;
-use Core\Uptelligence\Models\VersionRelease;
-use Core\Uptelligence\Services\DiffAnalyzerService;
-use Core\Uptelligence\Services\VendorStorageService;
+use Core\Mod\Uptelligence\Models\Vendor;
+use Core\Mod\Uptelligence\Models\VersionRelease;
+use Core\Mod\Uptelligence\Services\DiffAnalyzerService;
+use Core\Mod\Uptelligence\Services\VendorStorageService;
 
 class AnalyzeCommand extends Command
 {

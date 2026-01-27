@@ -2,13 +2,13 @@
 
 declare(strict_types=1);
 
-namespace Core\Uptelligence\Services;
+namespace Core\Mod\Uptelligence\Services;
 
 use Illuminate\Support\Facades\Log;
-use Core\Uptelligence\Models\UptelligenceWebhook;
-use Core\Uptelligence\Models\UptelligenceWebhookDelivery;
-use Core\Uptelligence\Models\Vendor;
-use Core\Uptelligence\Models\VersionRelease;
+use Core\Mod\Uptelligence\Models\UptelligenceWebhook;
+use Core\Mod\Uptelligence\Models\UptelligenceWebhookDelivery;
+use Core\Mod\Uptelligence\Models\Vendor;
+use Core\Mod\Uptelligence\Models\VersionRelease;
 
 /**
  * WebhookReceiverService - processes incoming vendor release webhooks.

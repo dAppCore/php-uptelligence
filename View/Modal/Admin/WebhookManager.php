@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Core\Uptelligence\View\Modal\Admin;
+namespace Core\Mod\Uptelligence\View\Modal\Admin;
 
 use Illuminate\Contracts\View\View;
 use Livewire\Attributes\Computed;
@@ -10,9 +10,9 @@ use Livewire\Attributes\Title;
 use Livewire\Attributes\Url;
 use Livewire\Component;
 use Livewire\WithPagination;
-use Core\Uptelligence\Models\UptelligenceWebhook;
-use Core\Uptelligence\Models\UptelligenceWebhookDelivery;
-use Core\Uptelligence\Models\Vendor;
+use Core\Mod\Uptelligence\Models\UptelligenceWebhook;
+use Core\Mod\Uptelligence\Models\UptelligenceWebhookDelivery;
+use Core\Mod\Uptelligence\Models\Vendor;
 
 #[Title('Webhook Manager')]
 class WebhookManager extends Component
@@ -208,7 +208,7 @@ class WebhookManager extends Component
 
         if ($delivery->canRetry()) {
             $delivery->scheduleRetry();
-            \Core\Uptelligence\Jobs\ProcessUptelligenceWebhook::dispatch($delivery);
+            \Core\Mod\Uptelligence\Jobs\ProcessUptelligenceWebhook::dispatch($delivery);
         }
 
         unset($this->selectedWebhookDeliveries);

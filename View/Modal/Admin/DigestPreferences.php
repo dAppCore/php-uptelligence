@@ -2,15 +2,15 @@
 
 declare(strict_types=1);
 
-namespace Core\Uptelligence\View\Modal\Admin;
+namespace Core\Mod\Uptelligence\View\Modal\Admin;
 
 use Illuminate\Contracts\View\View;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Title;
 use Livewire\Component;
-use Core\Uptelligence\Models\UptelligenceDigest;
-use Core\Uptelligence\Models\Vendor;
-use Core\Uptelligence\Services\UptelligenceDigestService;
+use Core\Mod\Uptelligence\Models\UptelligenceDigest;
+use Core\Mod\Uptelligence\Models\Vendor;
+use Core\Mod\Uptelligence\Services\UptelligenceDigestService;
 
 #[Title('Digest Preferences')]
 class DigestPreferences extends Component

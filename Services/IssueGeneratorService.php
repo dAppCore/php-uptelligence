@@ -2,16 +2,16 @@
 
 declare(strict_types=1);
 
-namespace Core\Uptelligence\Services;
+namespace Core\Mod\Uptelligence\Services;
 
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\RateLimiter;
 use InvalidArgumentException;
-use Core\Uptelligence\Models\AnalysisLog;
-use Core\Uptelligence\Models\UpstreamTodo;
-use Core\Uptelligence\Models\Vendor;
+use Core\Mod\Uptelligence\Models\AnalysisLog;
+use Core\Mod\Uptelligence\Models\UpstreamTodo;
+use Core\Mod\Uptelligence\Models\Vendor;
 
 /**
  * Issue Generator Service - creates GitHub/Gitea issues from upstream todos.

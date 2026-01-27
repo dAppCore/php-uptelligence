@@ -9,7 +9,7 @@ declare(strict_types=1);
  */
 
 use Illuminate\Support\Facades\Route;
-use Core\Uptelligence\Controllers\Api\WebhookController;
+use Core\Mod\Uptelligence\Controllers\Api\WebhookController;
 
 /*
 |--------------------------------------------------------------------------

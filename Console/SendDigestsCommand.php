@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
-namespace Core\Uptelligence\Console;
+namespace Core\Mod\Uptelligence\Console;
 
 use Illuminate\Console\Command;
-use Core\Uptelligence\Models\UptelligenceDigest;
-use Core\Uptelligence\Services\UptelligenceDigestService;
+use Core\Mod\Uptelligence\Models\UptelligenceDigest;
+use Core\Mod\Uptelligence\Services\UptelligenceDigestService;
 
 /**
  * Send Uptelligence digest emails to subscribed users.

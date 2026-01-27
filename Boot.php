@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Core\Uptelligence;
+namespace Core\Mod\Uptelligence;
 
 use Core\Events\AdminPanelBooting;
 use Core\Events\ApiRoutesRegistering;
@@ -48,15 +48,15 @@ class Boot extends ServiceProvider
             'upstream'
         );
 
-        $this->app->singleton(\Core\Uptelligence\Services\IssueGeneratorService::class);
-        $this->app->singleton(\Core\Uptelligence\Services\UpstreamPlanGeneratorService::class);
-        $this->app->singleton(\Core\Uptelligence\Services\VendorStorageService::class);
-        $this->app->singleton(\Core\Uptelligence\Services\DiffAnalyzerService::class);
-        $this->app->singleton(\Core\Uptelligence\Services\AssetTrackerService::class);
-        $this->app->singleton(\Core\Uptelligence\Services\AIAnalyzerService::class);
-        $this->app->singleton(\Core\Uptelligence\Services\VendorUpdateCheckerService::class);
-        $this->app->singleton(\Core\Uptelligence\Services\UptelligenceDigestService::class);
-        $this->app->singleton(\Core\Uptelligence\Services\WebhookReceiverService::class);
+        $this->app->singleton(\Core\Mod\Uptelligence\Services\IssueGeneratorService::class);
+        $this->app->singleton(\Core\Mod\Uptelligence\Services\UpstreamPlanGeneratorService::class);
+        $this->app->singleton(\Core\Mod\Uptelligence\Services\VendorStorageService::class);
+        $this->app->singleton(\Core\Mod\Uptelligence\Services\DiffAnalyzerService::class);
+        $this->app->singleton(\Core\Mod\Uptelligence\Services\AssetTrackerService::class);
+        $this->app->singleton(\Core\Mod\Uptelligence\Services\AIAnalyzerService::class);
+        $this->app->singleton(\Core\Mod\Uptelligence\Services\VendorUpdateCheckerService::class);
+        $this->app->singleton(\Core\Mod\Uptelligence\Services\UptelligenceDigestService::class);
+        $this->app->singleton(\Core\Mod\Uptelligence\Services\WebhookReceiverService::class);
     }
 
     // -------------------------------------------------------------------------

@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Core\Uptelligence\Models;
+namespace Core\Mod\Uptelligence\Models;
 
 use Core\Mod\Tenant\Concerns\BelongsToWorkspace;
 use Core\Mod\Tenant\Models\User;

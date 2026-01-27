@@ -2,14 +2,14 @@
 
 declare(strict_types=1);
 
-namespace Core\Uptelligence\Notifications;
+namespace Core\Mod\Uptelligence\Notifications;
 
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
 use Illuminate\Support\Collection;
-use Core\Uptelligence\Models\UptelligenceDigest;
+use Core\Mod\Uptelligence\Models\UptelligenceDigest;
 
 /**
  * SendUptelligenceDigest - email notification for vendor update summaries.

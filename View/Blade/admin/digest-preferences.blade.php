@@ -30,7 +30,7 @@
                 <flux:heading size="lg" class="mb-4">Frequency</flux:heading>
 
                 <flux:radio.group wire:model.live="frequency" class="space-y-3">
-                    @foreach(\Core\Uptelligence\Models\UptelligenceDigest::getFrequencyOptions() as $value => $label)
+                    @foreach(\Core\Mod\Uptelligence\Models\UptelligenceDigest::getFrequencyOptions() as $value => $label)
                         <flux:radio
                             value="{{ $value }}"
                             label="{{ $label }}"

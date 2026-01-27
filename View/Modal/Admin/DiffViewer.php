@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Core\Uptelligence\View\Modal\Admin;
+namespace Core\Mod\Uptelligence\View\Modal\Admin;
 
 use Illuminate\Contracts\View\View;
 use Livewire\Attributes\Computed;
@@ -10,9 +10,9 @@ use Livewire\Attributes\Title;
 use Livewire\Attributes\Url;
 use Livewire\Component;
 use Livewire\WithPagination;
-use Core\Uptelligence\Models\DiffCache;
-use Core\Uptelligence\Models\Vendor;
-use Core\Uptelligence\Models\VersionRelease;
+use Core\Mod\Uptelligence\Models\DiffCache;
+use Core\Mod\Uptelligence\Models\Vendor;
+use Core\Mod\Uptelligence\Models\VersionRelease;
 
 #[Title('Diff Viewer')]
 class DiffViewer extends Component

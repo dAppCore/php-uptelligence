@@ -14,18 +14,18 @@
     },
     "autoload": {
         "psr-4": {
-            "Core\\Uptelligence\\": ""
+            "Core\\Mod\\Uptelligence\\": ""
         }
     },
     "autoload-dev": {
         "psr-4": {
-            "Core\\Uptelligence\\Tests\\": "tests/"
+            "Core\\Mod\\Uptelligence\\Tests\\": "tests/"
         }
     },
     "extra": {
         "laravel": {
             "providers": [
-                "Core\\Uptelligence\\Boot"
+                "Core\\Mod\\Uptelligence\\Boot"
             ]
         }
     },

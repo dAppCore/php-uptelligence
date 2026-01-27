@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Core\Uptelligence\Jobs;
+namespace Core\Mod\Uptelligence\Jobs;
 
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -10,9 +10,9 @@ use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
-use Core\Uptelligence\Models\UptelligenceWebhookDelivery;
-use Core\Uptelligence\Notifications\NewReleaseDetected;
-use Core\Uptelligence\Services\WebhookReceiverService;
+use Core\Mod\Uptelligence\Models\UptelligenceWebhookDelivery;
+use Core\Mod\Uptelligence\Notifications\NewReleaseDetected;
+use Core\Mod\Uptelligence\Services\WebhookReceiverService;
 
 /**
  * ProcessUptelligenceWebhook - async processing of incoming vendor webhooks.
@@ -129,13 +129,13 @@ class ProcessUptelligenceWebhook implements ShouldQueue
      * Send notification when a new release is detected.
      */
     protected function sendReleaseNotification(
-        \Core\Uptelligence\Models\Vendor $vendor,
+        \Core\Mod\Uptelligence\Models\Vendor $vendor,
         array $parsedData,
         array $result
     ): void {
         try {
             // Get users subscribed to digest notifications for this vendor
-            $digests = \Core\Uptelligence\Models\UptelligenceDigest::where('is_enabled', true)
+            $digests = \Core\Mod\Uptelligence\Models\UptelligenceDigest::where('is_enabled', true)
                 ->with('user')
                 ->get();
 

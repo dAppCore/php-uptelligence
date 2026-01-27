@@ -2,16 +2,16 @@
 
 declare(strict_types=1);
 
-namespace Core\Uptelligence\Controllers\Api;
+namespace Core\Mod\Uptelligence\Controllers\Api;
 
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Routing\Controller;
 use Illuminate\Support\Facades\Log;
-use Core\Uptelligence\Jobs\ProcessUptelligenceWebhook;
-use Core\Uptelligence\Models\UptelligenceWebhook;
-use Core\Uptelligence\Models\UptelligenceWebhookDelivery;
-use Core\Uptelligence\Services\WebhookReceiverService;
+use Core\Mod\Uptelligence\Jobs\ProcessUptelligenceWebhook;
+use Core\Mod\Uptelligence\Models\UptelligenceWebhook;
+use Core\Mod\Uptelligence\Models\UptelligenceWebhookDelivery;
+use Core\Mod\Uptelligence\Services\WebhookReceiverService;
 
 /**
  * WebhookController - receives incoming vendor release webhooks.

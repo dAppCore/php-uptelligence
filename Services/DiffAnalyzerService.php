@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Core\Uptelligence\Services;
+namespace Core\Mod\Uptelligence\Services;
 
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -10,10 +10,10 @@ use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Process;
 use InvalidArgumentException;
-use Core\Uptelligence\Models\AnalysisLog;
-use Core\Uptelligence\Models\DiffCache;
-use Core\Uptelligence\Models\Vendor;
-use Core\Uptelligence\Models\VersionRelease;
+use Core\Mod\Uptelligence\Models\AnalysisLog;
+use Core\Mod\Uptelligence\Models\DiffCache;
+use Core\Mod\Uptelligence\Models\Vendor;
+use Core\Mod\Uptelligence\Models\VersionRelease;
 
 /**
  * Diff Analyzer Service - analyses differences between vendor versions.
