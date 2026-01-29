@@ -19,7 +19,7 @@ return new class extends Migration
         Schema::create('uptelligence_webhooks', function (Blueprint $table) {
             $table->id();
             $table->uuid('uuid')->unique();
-            $table->foreignId('vendor_id')->constrained('vendors')->cascadeOnDelete();
+            $table->foreignId('vendor_id')->constrained('uptelligence_vendors')->cascadeOnDelete();
             $table->string('provider', 32); // github, gitlab, npm, packagist, custom
             $table->text('secret')->nullable(); // encrypted, for signature verification
             $table->text('previous_secret')->nullable(); // encrypted, for grace period
@@ -40,7 +40,7 @@ return new class extends Migration
         Schema::create('uptelligence_webhook_deliveries', function (Blueprint $table) {
             $table->id();
             $table->foreignId('webhook_id')->constrained('uptelligence_webhooks')->cascadeOnDelete();
-            $table->foreignId('vendor_id')->constrained('vendors')->cascadeOnDelete();
+            $table->foreignId('vendor_id')->constrained('uptelligence_vendors')->cascadeOnDelete();
             $table->string('event_type', 64); // release.published, package.updated, etc.
             $table->string('provider', 32);
             $table->string('version')->nullable(); // extracted version

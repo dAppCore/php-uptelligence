@@ -65,16 +65,27 @@ return new class extends Migration
                 $table->string('status', 32)->default('pending'); // pending, analyzed, skipped
                 $table->json('metadata_json')->nullable();
                 $table->json('summary')->nullable();
-                $table->unsignedInteger('files_changed')->default(0);
+                $table->unsignedInteger('files_added')->default(0);
+                $table->unsignedInteger('files_modified')->default(0);
+                $table->unsignedInteger('files_removed')->default(0);
                 $table->unsignedInteger('todos_created')->default(0);
+                // Storage fields for S3 archiving
+                $table->string('storage_path', 512)->nullable();
+                $table->string('storage_disk', 16)->default('local'); // local, s3
+                $table->string('s3_key', 512)->nullable();
+                $table->string('file_hash', 64)->nullable();
+                $table->unsignedBigInteger('file_size')->nullable();
                 $table->timestamp('released_at')->nullable();
                 $table->timestamp('analyzed_at')->nullable();
+                $table->timestamp('archived_at')->nullable();
+                $table->timestamp('last_downloaded_at')->nullable();
                 $table->timestamps();
                 $table->softDeletes();
 
                 $table->unique(['vendor_id', 'version']);
                 $table->index(['vendor_id', 'status']);
                 $table->index('released_at');
+                $table->index('storage_disk');
             });
         }
 
@@ -86,7 +97,7 @@ return new class extends Migration
                 $table->string('from_version', 64)->nullable();
                 $table->string('to_version', 64)->nullable();
                 $table->string('type', 32)->default('feature'); // feature, bugfix, security, ui, block, api, refactor, dependency
-                $table->string('status', 32)->default('pending'); // pending, in_progress, completed, skipped
+                $table->string('status', 32)->default('pending'); // pending, in_progress, ported, skipped, wont_port
                 $table->string('title');
                 $table->text('description')->nullable();
                 $table->text('port_notes')->nullable();
@@ -100,6 +111,9 @@ return new class extends Migration
                 $table->json('ai_analysis')->nullable();
                 $table->decimal('ai_confidence', 3, 2)->nullable();
                 $table->string('github_issue_number', 32)->nullable();
+                $table->string('branch_name', 128)->nullable();
+                $table->foreignId('assigned_to')->nullable()->constrained('users')->nullOnDelete();
+                $table->timestamp('started_at')->nullable();
                 $table->timestamp('completed_at')->nullable();
                 $table->timestamps();
                 $table->softDeletes();
@@ -107,6 +121,7 @@ return new class extends Migration
                 $table->index(['vendor_id', 'status']);
                 $table->index(['status', 'priority']);
                 $table->index('type');
+                $table->index('assigned_to');
             });
         }
 
@@ -116,9 +131,10 @@ return new class extends Migration
                 $table->id();
                 $table->foreignId('version_release_id')->constrained('uptelligence_version_releases')->cascadeOnDelete();
                 $table->string('file_path', 512);
-                $table->string('change_type', 16); // added, modified, deleted, renamed
+                $table->string('change_type', 16); // added, modified, removed
                 $table->string('category', 32)->nullable(); // controller, model, view, migration, config, etc.
                 $table->mediumText('diff_content')->nullable();
+                $table->mediumText('new_content')->nullable();
                 $table->unsignedInteger('lines_added')->default(0);
                 $table->unsignedInteger('lines_removed')->default(0);
                 $table->json('metadata')->nullable();
@@ -135,11 +151,10 @@ return new class extends Migration
             Schema::create('uptelligence_analysis_logs', function (Blueprint $table) {
                 $table->id();
                 $table->foreignId('vendor_id')->nullable()->constrained('uptelligence_vendors')->nullOnDelete();
-                $table->foreignId('todo_id')->nullable()->constrained('uptelligence_upstream_todos')->nullOnDelete();
+                $table->foreignId('version_release_id')->nullable()->constrained('uptelligence_version_releases')->nullOnDelete();
                 $table->string('action', 64);
-                $table->string('status', 32)->default('success');
                 $table->json('context')->nullable();
-                $table->text('message')->nullable();
+                $table->text('error_message')->nullable();
                 $table->timestamps();
 
                 $table->index(['vendor_id', 'created_at']);
@@ -147,22 +162,35 @@ return new class extends Migration
             });
         }
 
-        // 6. Assets - tracked software assets (Composer/NPM packages)
+        // 6. Assets - tracked software assets (Composer/NPM packages, fonts, themes, CDN)
         if (! Schema::hasTable('uptelligence_assets')) {
             Schema::create('uptelligence_assets', function (Blueprint $table) {
                 $table->id();
-                $table->string('package_name');
-                $table->string('type', 16); // composer, npm
-                $table->string('current_version', 64)->nullable();
-                $table->string('latest_version', 64)->nullable();
+                $table->string('slug', 64)->unique();
+                $table->string('name');
+                $table->text('description')->nullable();
+                $table->string('type', 16); // composer, npm, font, theme, cdn, manual
+                $table->string('package_name')->nullable();
                 $table->string('registry_url', 512)->nullable();
-                $table->boolean('is_active')->default(true);
+                // Licence tracking
+                $table->string('licence_type', 32)->nullable(); // lifetime, subscription, oss, trial
+                $table->date('licence_expires_at')->nullable();
+                $table->json('licence_meta')->nullable();
+                // Version tracking
+                $table->string('installed_version', 64)->nullable();
+                $table->string('latest_version', 64)->nullable();
                 $table->timestamp('last_checked_at')->nullable();
-                $table->json('metadata')->nullable();
+                $table->boolean('auto_update')->default(false);
+                // Installation details
+                $table->string('install_path', 512)->nullable();
+                $table->json('build_config')->nullable();
+                $table->json('used_in_projects')->nullable();
+                $table->text('setup_notes')->nullable();
+                $table->boolean('is_active')->default(true);
                 $table->timestamps();
 
-                $table->unique(['package_name', 'type']);
                 $table->index(['type', 'is_active']);
+                $table->index('licence_expires_at');
             });
         }
 
@@ -172,8 +200,11 @@ return new class extends Migration
                 $table->id();
                 $table->foreignId('asset_id')->constrained('uptelligence_assets')->cascadeOnDelete();
                 $table->string('version', 64);
+                $table->text('changelog')->nullable();
+                $table->json('breaking_changes')->nullable();
+                $table->string('download_url', 512)->nullable();
+                $table->string('local_path', 512)->nullable();
                 $table->timestamp('released_at')->nullable();
-                $table->json('metadata')->nullable();
                 $table->timestamps();
 
                 $table->unique(['asset_id', 'version']);

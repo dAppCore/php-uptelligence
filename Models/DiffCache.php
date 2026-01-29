@@ -62,9 +62,18 @@ class DiffCache extends Model
         'version_release_id',
         'file_path',
         'change_type',
+        'category',
         'diff_content',
         'new_content',
-        'category',
+        'lines_added',
+        'lines_removed',
+        'metadata',
+    ];
+
+    protected $casts = [
+        'lines_added' => 'integer',
+        'lines_removed' => 'integer',
+        'metadata' => 'array',
     ];
 
     // Relationships
