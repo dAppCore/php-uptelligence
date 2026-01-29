@@ -20,6 +20,47 @@ use Core\Mod\Uptelligence\Models\AssetVersion;
 class AssetTrackerService
 {
     /**
+     * Valid Composer package name pattern.
+     *
+     * Matches vendor/package format with alphanumeric, hyphen, underscore, and dot characters.
+     */
+    protected const COMPOSER_PACKAGE_PATTERN = '/^[a-z0-9]([_.-]?[a-z0-9]+)*\/[a-z0-9](([_.]?|-{0,2})[a-z0-9]+)*$/i';
+
+    /**
+     * Valid NPM package name pattern.
+     *
+     * Matches scoped (@scope/package) and unscoped package names.
+     */
+    protected const NPM_PACKAGE_PATTERN = '/^(@[a-z0-9-~][a-z0-9-._~]*\/)?[a-z0-9-~][a-z0-9-._~]*$/i';
+
+    /**
+     * Validate a package name to prevent shell injection.
+     *
+     * Package names should only contain safe characters for CLI usage.
+     *
+     * @throws \InvalidArgumentException If the package name contains invalid characters
+     */
+    protected function validatePackageName(string $packageName, string $type): string
+    {
+        $pattern = match ($type) {
+            Asset::TYPE_COMPOSER => self::COMPOSER_PACKAGE_PATTERN,
+            Asset::TYPE_NPM => self::NPM_PACKAGE_PATTERN,
+            default => throw new \InvalidArgumentException("Unknown package type: {$type}"),
+        };
+
+        if (! preg_match($pattern, $packageName)) {
+            Log::warning('Uptelligence: Invalid package name rejected', [
+                'package_name' => $packageName,
+                'type' => $type,
+            ]);
+
+            throw new \InvalidArgumentException("Invalid package name format: {$packageName}");
+        }
+
+        return $packageName;
+    }
+
+    /**
      * Check all active assets for updates.
      */
     public function checkAllForUpdates(): array
@@ -142,11 +183,21 @@ class AssetTrackerService
 
     /**
      * Check custom Composer registry (like Flux Pro).
+     *
+     * Uses array-based Process invocation to prevent shell injection.
      */
     protected function checkCustomComposerRegistry(Asset $asset): array
     {
+        // Validate package name to prevent shell injection
+        try {
+            $packageName = $this->validatePackageName($asset->package_name, Asset::TYPE_COMPOSER);
+        } catch (\InvalidArgumentException $e) {
+            return ['status' => 'error', 'message' => 'Invalid package name format'];
+        }
+
         // For licensed packages, we need to check the installed version via composer show
-        $result = Process::run("composer show {$asset->package_name} --format=json 2>/dev/null");
+        // Use array syntax to prevent shell injection
+        $result = Process::run(['composer', 'show', $packageName, '--format=json']);
 
         if ($result->successful()) {
             $data = json_decode($result->output(), true);
@@ -241,7 +292,8 @@ class AssetTrackerService
         }
 
         // Check for scoped/private packages via npm view
-        $result = Process::run("npm view {$asset->package_name} version 2>/dev/null");
+        // Use array syntax to prevent shell injection
+        $result = Process::run(['npm', 'view', $asset->package_name, 'version']);
         if ($result->successful()) {
             $latestVersion = trim($result->output());
             if ($latestVersion) {
@@ -335,6 +387,8 @@ class AssetTrackerService
 
     /**
      * Update a Composer package.
+     *
+     * Uses array-based Process invocation to prevent shell injection.
      */
     protected function updateComposerPackage(Asset $asset): array
     {
@@ -342,13 +396,21 @@ class AssetTrackerService
             return ['status' => 'error', 'message' => 'No package name'];
         }
 
+        // Validate package name to prevent shell injection
+        try {
+            $packageName = $this->validatePackageName($asset->package_name, Asset::TYPE_COMPOSER);
+        } catch (\InvalidArgumentException $e) {
+            return ['status' => 'error', 'message' => 'Invalid package name format'];
+        }
+
+        // Use array syntax to prevent shell injection
         $result = Process::timeout(300)->run(
-            "composer update {$asset->package_name} --no-interaction"
+            ['composer', 'update', $packageName, '--no-interaction']
         );
 
         if ($result->successful()) {
-            // Get new installed version
-            $showResult = Process::run("composer show {$asset->package_name} --format=json");
+            // Get new installed version using array syntax
+            $showResult = Process::run(['composer', 'show', $packageName, '--format=json']);
             if ($showResult->successful()) {
                 $data = json_decode($showResult->output(), true);
                 $newVersion = $data['versions'][0] ?? $asset->latest_version;
@@ -363,6 +425,8 @@ class AssetTrackerService
 
     /**
      * Update an NPM package.
+     *
+     * Uses array-based Process invocation to prevent shell injection.
      */
     protected function updateNpmPackage(Asset $asset): array
     {
@@ -370,7 +434,15 @@ class AssetTrackerService
             return ['status' => 'error', 'message' => 'No package name'];
         }
 
-        $result = Process::timeout(300)->run("npm update {$asset->package_name}");
+        // Validate package name to prevent shell injection
+        try {
+            $packageName = $this->validatePackageName($asset->package_name, Asset::TYPE_NPM);
+        } catch (\InvalidArgumentException $e) {
+            return ['status' => 'error', 'message' => 'Invalid package name format'];
+        }
+
+        // Use array syntax to prevent shell injection
+        $result = Process::timeout(300)->run(['npm', 'update', $packageName]);
 
         if ($result->successful()) {
             $asset->update(['installed_version' => $asset->latest_version]);

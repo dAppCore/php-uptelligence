@@ -29,6 +29,7 @@ This module is well-designed architecturally. P1 critical issues fixed in Wave 1
 - [x] **Dependency on Agentic module** - FIXED: `UpstreamPlanGeneratorService` now checks `agenticModuleAvailable()` before using Agentic models
 - [ ] **API keys required** - AI analysis and GitHub/Gitea integration require API keys but no validation or graceful degradation
 - [x] **DiffAnalyzerService shell injection risk** - FIXED: Now uses `Process::run(['diff', '-u', $prevPath, $currPath])` array syntax
+- [x] **AssetTrackerService shell injection risk** - FIXED: Now uses array-based Process invocation with package name validation
 
 ## Recommended Improvements
 
