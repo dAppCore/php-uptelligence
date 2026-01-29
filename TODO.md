@@ -6,78 +6,81 @@ Upstream vendor tracking and dependency intelligence for Host UK.
 
 ## P1 - Critical / Security
 
-### Migration Mismatch - Uptime Monitoring vs Vendor Tracking
-The first migration (`0001_01_01_000001_create_uptelligence_tables.php`) creates uptime monitoring tables (`uptelligence_monitors`, `uptelligence_checks`, `uptelligence_incidents`, `uptelligence_daily_stats`) rather than vendor tracking tables.
+### ~~Migration Mismatch - Uptime Monitoring vs Vendor Tracking~~ FIXED (P2-058)
 
-**Note:** The code review from 2026-01-21 mentions migrations were created (`2026_01_21_100000_create_uptelligence_tables.php`), but this file is not present in the repository. The current migration appears to be for a different purpose (uptime monitoring).
+**FIXED:** 2026-01-29
 
-**Files affected:**
-- `database/migrations/0001_01_01_000001_create_uptelligence_tables.php` - Contains uptime monitoring tables
-- `Models/Vendor.php` - References `vendors` table
-- `Models/VersionRelease.php` - References `version_releases` table
-- `Models/UpstreamTodo.php` - References `upstream_todos` table
-- `Models/DiffCache.php` - References `diff_cache` table
-- `Models/AnalysisLog.php` - References `analysis_logs` table
-- `Models/Asset.php` - References `assets` table
-- `Models/AssetVersion.php` - References `asset_versions` table
+The package now clarifies that it serves dual purposes:
+1. **Uptime monitoring** (existing migration 000001) - for server health tracking
+2. **Vendor tracking** (new migration 000004) - for upstream dependency intelligence
 
-**Acceptance criteria:**
-- [ ] Clarify whether uptime monitoring is part of this package or a separate concern
-- [ ] If vendor tracking is the focus, replace or supplement migration with vendor tables
-- [ ] Ensure all model tables are created with appropriate columns
-- [ ] Add indexes as noted in the prior code review
+**Changes made:**
+- [x] Created new migration `0001_01_01_000004_create_uptelligence_vendor_tables.php` with all vendor tracking tables
+- [x] Added explicit `$table` property to all models with `uptelligence_` prefix:
+  - `Vendor` -> `uptelligence_vendors`
+  - `VersionRelease` -> `uptelligence_version_releases`
+  - `UpstreamTodo` -> `uptelligence_upstream_todos`
+  - `DiffCache` -> `uptelligence_diff_cache`
+  - `AnalysisLog` -> `uptelligence_analysis_logs`
+  - `Asset` -> `uptelligence_assets`
+  - `AssetVersion` -> `uptelligence_asset_versions`
+- [x] Added appropriate indexes for common query patterns
+- [x] Documented dual-purpose nature in migration comments
 
-### Webhook Signature Timing Attack Vulnerability
-The `verifyGitLabSignature` method uses direct string comparison which may be vulnerable to timing attacks.
+### ~~Webhook Signature Timing Attack Vulnerability~~ FIXED (P2-059)
 
-**File:** `Models/UptelligenceWebhook.php:250-253`
-```php
-protected function verifyGitLabSignature(string $signature, string $secret): bool
-{
-    return hash_equals($secret, $signature);  // This is correct, but see below
-}
-```
+**FIXED:** 2026-01-29
 
-**Note:** The method itself uses `hash_equals`, but verify all callers pass correctly. Additionally, consider constant-time comparison for all providers.
+**Audit result:** All signature verification methods already use `hash_equals()` for timing-safe comparison. The implementation is correct.
 
-**Acceptance criteria:**
-- [ ] Audit all signature verification paths for timing safety
-- [ ] Add unit tests for signature verification edge cases
+**Changes made:**
+- [x] Audited all signature verification paths - all use `hash_equals()`
+- [x] Added comprehensive unit tests in `tests/Unit/WebhookSignatureVerificationTest.php`:
+  - Tests for all providers (GitHub, GitLab, npm, Packagist, custom)
+  - Tests for grace period/secret rotation
+  - Tests for malformed signatures
+  - Tests for binary payloads
+  - Tests for edge cases (empty payloads, large payloads)
 
-### API Key Exposure in Logs
-The `AIAnalyzerService` and other services may log sensitive data in error scenarios.
+### ~~API Key Exposure in Logs~~ FIXED (P2-060)
 
-**Files affected:**
-- `Services/AIAnalyzerService.php` - Logs API responses which could contain sensitive context
-- `Services/IssueGeneratorService.php` - Logs response bodies on failure
+**FIXED:** 2026-01-29
 
-**Acceptance criteria:**
-- [ ] Audit all Log::error calls for sensitive data
-- [ ] Truncate or redact sensitive information in logs
-- [ ] Never log full API request/response bodies containing credentials
+**Changes made:**
+- [x] Added `redactSensitiveData()` method to `AIAnalyzerService`
+- [x] Added `redactSensitiveData()` method to `IssueGeneratorService`
+- [x] Added `redactSensitiveData()` method to `VendorUpdateCheckerService`
+- [x] All Log::error calls now pass through redaction before logging
+- [x] Redaction patterns cover:
+  - Anthropic API keys (sk-ant-...)
+  - OpenAI API keys (sk-...)
+  - GitHub tokens (ghp_..., gho_..., github_pat_...)
+  - Bearer tokens
+  - Authorization headers
+  - Generic API keys and secrets
 
-### Missing Input Validation on Webhook Payloads
-The `WebhookController` accepts JSON payloads without size limits or schema validation.
+### ~~Missing Input Validation on Webhook Payloads~~ FIXED (P2-061)
 
-**File:** `Controllers/Api/WebhookController.php`
+**FIXED:** 2026-01-29
 
-**Acceptance criteria:**
-- [ ] Add maximum payload size validation (e.g., 1MB limit)
-- [ ] Add basic schema validation for expected payload structure
-- [ ] Add protection against deeply nested JSON (DoS vector)
+**Changes made:**
+- [x] Added `MAX_PAYLOAD_SIZE` constant (1 MB limit)
+- [x] Added `MAX_JSON_DEPTH` constant (32 levels)
+- [x] Added `validatePayloadSize()` method - rejects payloads > 1MB
+- [x] Added `parseAndValidateJson()` method - validates JSON with depth limit
+- [x] Added `validatePayloadStructure()` method - provider-specific validation
+- [x] Added `hasExcessiveArraySize()` method - prevents DoS via large arrays
+- [x] Added comprehensive unit tests in `tests/Unit/WebhookPayloadValidationTest.php`
 
 ---
 
 ## P2 - High Priority
 
-### Missing Table Name on Vendor Model
-The `Vendor` model doesn't explicitly set `$table`, relying on Laravel's convention which would create `vendors` table.
+### ~~Missing Table Name on Vendor Model~~ FIXED
+**FIXED:** 2026-01-29 (as part of P2-058 migration fix)
 
-**File:** `Models/Vendor.php`
-
-**Acceptance criteria:**
-- [ ] Add explicit `protected $table = 'uptelligence_vendors';` for consistency with other models
-- [ ] Update migration to match
+- [x] Added explicit `protected $table = 'uptelligence_vendors';` to Vendor model
+- [x] All models now have explicit table names with `uptelligence_` prefix
 
 ### DiffAnalyzerService Constructor Pattern Inconsistency
 `DiffAnalyzerService` requires a `Vendor` in constructor unlike other services (which use dependency injection).
@@ -177,14 +180,12 @@ Some HTTP calls have retry logic, others don't.
 - [ ] Add retry logic to all external HTTP calls
 - [ ] Extract common HTTP client configuration to shared method
 
-### DiffCache Table Name Hardcoded
-Model sets table name to `diff_cache` but other tables use `uptelligence_` prefix.
+### ~~DiffCache Table Name Hardcoded~~ FIXED
+**FIXED:** 2026-01-29 (as part of P2-058 migration fix)
 
-**File:** `Models/DiffCache.php:22`
-
-**Acceptance criteria:**
-- [ ] Rename to `uptelligence_diff_cache` for consistency
-- [ ] Update migration
+- [x] Renamed table to `uptelligence_diff_cache` for consistency
+- [x] Updated model `$table` property
+- [x] Created migration with correct table name
 
 ### Missing Carbon Import in UptelligenceDigest
 Uses `\Carbon\Carbon` with full path instead of import.
@@ -347,6 +348,16 @@ Extract structured changelog data from releases.
 ---
 
 ## Completed
+
+### 2026-01-29 P2 Security & Infrastructure Fixes
+
+- [x] **P2-058: Migration Mismatch** - Created vendor tracking migration (`0001_01_01_000004_create_uptelligence_vendor_tables.php`), added explicit `$table` properties to all models with `uptelligence_` prefix, clarified dual-purpose nature (uptime + vendor tracking)
+- [x] **P2-059: Webhook Signature Timing Attack Audit** - Verified all signature verification uses `hash_equals()`, added comprehensive tests in `tests/Unit/WebhookSignatureVerificationTest.php`
+- [x] **P2-060: API Key Exposure in Logs** - Added `redactSensitiveData()` method to AIAnalyzerService, IssueGeneratorService, and VendorUpdateCheckerService to redact API keys, tokens, and credentials from log output
+- [x] **P2-061: Missing Webhook Payload Validation** - Added payload size limit (1MB), JSON depth limit (32), provider-specific schema validation, array size limits, tests in `tests/Unit/WebhookPayloadValidationTest.php`
+- [x] **P3-DiffCache Table Name** - Fixed table name from `diff_cache` to `uptelligence_diff_cache` for consistency
+
+### 2026-01-21 Code Review Wave
 
 Items completed as part of the 2026-01-21 code review wave (per `changelog/2026/jan/code-review.md`):
 

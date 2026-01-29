@@ -17,6 +17,11 @@ class AnalysisLog extends Model
 {
     use HasFactory;
 
+    /**
+     * The table associated with the model.
+     */
+    protected $table = 'uptelligence_analysis_logs';
+
     // Actions
     public const ACTION_VERSION_DETECTED = 'version_detected';
 

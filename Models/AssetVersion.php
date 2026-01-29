@@ -17,6 +17,11 @@ class AssetVersion extends Model
 {
     use HasFactory;
 
+    /**
+     * The table associated with the model.
+     */
+    protected $table = 'uptelligence_asset_versions';
+
     protected $fillable = [
         'asset_id',
         'version',

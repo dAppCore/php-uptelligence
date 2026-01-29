@@ -119,7 +119,7 @@ class VendorUpdateCheckerService
             Log::warning('Uptelligence: GitHub API request failed', [
                 'vendor' => $vendor->slug,
                 'status' => $response->status(),
-                'body' => $response->body(),
+                'body' => $this->redactSensitiveData(substr($response->body(), 0, 500)),
             ]);
 
             return $this->errorResult("GitHub API error: {$response->status()}");
@@ -463,5 +463,36 @@ class VendorUpdateCheckerService
         $version = trim($version);
 
         return $version ?: null;
+    }
+
+    /**
+     * Redact sensitive data from log messages.
+     *
+     * Removes or masks API tokens and credentials that might
+     * appear in error responses.
+     */
+    protected function redactSensitiveData(string $content): string
+    {
+        $patterns = [
+            // GitHub tokens (ghp_..., gho_..., github_pat_...)
+            '/ghp_[a-zA-Z0-9]+/' => '[REDACTED_GITHUB_TOKEN]',
+            '/gho_[a-zA-Z0-9]+/' => '[REDACTED_GITHUB_TOKEN]',
+            '/github_pat_[a-zA-Z0-9_]+/' => '[REDACTED_GITHUB_TOKEN]',
+            // Generic bearer tokens
+            '/Bearer\s+[a-zA-Z0-9._-]+/' => 'Bearer [REDACTED]',
+            // Authorization header values
+            '/["\']?[Aa]uthorization["\']?\s*:\s*["\']?[^"\'}\s]+/' => '"authorization": "[REDACTED]"',
+            // Generic token patterns in JSON
+            '/["\']?token["\']?\s*:\s*["\']?[a-zA-Z0-9._-]{20,}["\']?/' => '"token": "[REDACTED]"',
+            // API key patterns
+            '/api[_-]?key=([^&\s"\']+)/' => 'api_key=[REDACTED]',
+        ];
+
+        $redacted = $content;
+        foreach ($patterns as $pattern => $replacement) {
+            $redacted = preg_replace($pattern, $replacement, $redacted);
+        }
+
+        return $redacted;
     }
 }

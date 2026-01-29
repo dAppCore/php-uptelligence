@@ -299,7 +299,7 @@ PROMPT;
 
         Log::error('Uptelligence: Anthropic API request failed', [
             'status' => $response->status(),
-            'body' => substr($response->body(), 0, 500),
+            'body' => $this->redactSensitiveData(substr($response->body(), 0, 500)),
         ]);
 
         return null;
@@ -354,10 +354,46 @@ PROMPT;
 
         Log::error('Uptelligence: OpenAI API request failed', [
             'status' => $response->status(),
-            'body' => substr($response->body(), 0, 500),
+            'body' => $this->redactSensitiveData(substr($response->body(), 0, 500)),
         ]);
 
         return null;
+    }
+
+    /**
+     * Redact sensitive data from log messages.
+     *
+     * Removes or masks API keys, tokens, and other credentials that
+     * might appear in error responses or debug output.
+     */
+    protected function redactSensitiveData(string $content): string
+    {
+        // Redact common API key patterns
+        $patterns = [
+            // Anthropic API keys (sk-ant-...)
+            '/sk-ant-[a-zA-Z0-9_-]+/' => '[REDACTED_ANTHROPIC_KEY]',
+            // OpenAI API keys (sk-...)
+            '/sk-[a-zA-Z0-9]{20,}/' => '[REDACTED_OPENAI_KEY]',
+            // Generic bearer tokens
+            '/Bearer\s+[a-zA-Z0-9._-]+/' => 'Bearer [REDACTED]',
+            // Authorization headers
+            '/["\']?[Aa]uthorization["\']?\s*:\s*["\']?[^"\'}\s]+/' => '"authorization": "[REDACTED]"',
+            // API key query parameters
+            '/api[_-]?key=([^&\s"\']+)/' => 'api_key=[REDACTED]',
+            // x-api-key header values
+            '/x-api-key["\']?\s*:\s*["\']?[^"\'}\s]+/' => '"x-api-key": "[REDACTED]"',
+            // Generic secret patterns
+            '/["\']?secret["\']?\s*:\s*["\']?[^"\'}\s]+/' => '"secret": "[REDACTED]"',
+            // Token patterns
+            '/["\']?token["\']?\s*:\s*["\']?[a-zA-Z0-9._-]{20,}["\']?/' => '"token": "[REDACTED]"',
+        ];
+
+        $redacted = $content;
+        foreach ($patterns as $pattern => $replacement) {
+            $redacted = preg_replace($pattern, $replacement, $redacted);
+        }
+
+        return $redacted;
     }
 
     /**

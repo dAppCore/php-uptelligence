@@ -19,6 +19,13 @@ class Vendor extends Model
     use HasFactory;
     use SoftDeletes;
 
+    /**
+     * The table associated with the model.
+     *
+     * Explicitly set to match the uptelligence_ prefix convention.
+     */
+    protected $table = 'uptelligence_vendors';
+
     // Source types
     public const SOURCE_LICENSED = 'licensed';
 

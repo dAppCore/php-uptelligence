@@ -17,7 +17,12 @@ class DiffCache extends Model
 {
     use HasFactory;
 
-    protected $table = 'diff_cache';
+    /**
+     * The table associated with the model.
+     *
+     * Uses the uptelligence_ prefix for consistency with other module tables.
+     */
+    protected $table = 'uptelligence_diff_cache';
 
     // Change types
     public const CHANGE_ADDED = 'added';

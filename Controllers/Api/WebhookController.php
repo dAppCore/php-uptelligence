@@ -21,6 +21,16 @@ use Core\Mod\Uptelligence\Services\WebhookReceiverService;
  */
 class WebhookController extends Controller
 {
+    /**
+     * Maximum allowed payload size in bytes (1 MB).
+     */
+    protected const MAX_PAYLOAD_SIZE = 1048576;
+
+    /**
+     * Maximum allowed JSON nesting depth.
+     */
+    protected const MAX_JSON_DEPTH = 32;
+
     public function __construct(
         protected WebhookReceiverService $service,
     ) {}
@@ -55,6 +65,12 @@ class WebhookController extends Controller
         // Get raw payload
         $payload = $request->getContent();
 
+        // Validate payload size (DoS protection)
+        $payloadValidation = $this->validatePayloadSize($payload, $webhook->id);
+        if ($payloadValidation !== null) {
+            return $payloadValidation;
+        }
+
         // Verify signature
         $signature = $this->extractSignature($request, $webhook->provider);
         $signatureStatus = $this->service->verifySignature($webhook, $payload, $signature);
@@ -69,15 +85,16 @@ class WebhookController extends Controller
             return response('Invalid signature', 401);
         }
 
-        // Parse JSON payload
-        $data = json_decode($payload, true);
-        if (json_last_error() !== JSON_ERROR_NONE) {
-            Log::warning('Uptelligence webhook invalid JSON payload', [
-                'webhook_id' => $webhook->id,
-                'error' => json_last_error_msg(),
-            ]);
-
+        // Parse and validate JSON payload
+        $data = $this->parseAndValidateJson($payload, $webhook->id);
+        if ($data === null) {
             return response('Invalid JSON payload', 400);
+        }
+
+        // Validate payload structure
+        $structureValidation = $this->validatePayloadStructure($data, $webhook);
+        if ($structureValidation !== null) {
+            return $structureValidation;
         }
 
         // Determine event type
@@ -264,5 +281,228 @@ class WebhookController extends Controller
             'signature_status' => $signatureStatus,
             'has_secret' => ! empty($webhook->secret),
         ]);
+    }
+
+    // -------------------------------------------------------------------------
+    // Payload Validation Methods
+    // -------------------------------------------------------------------------
+
+    /**
+     * Validate payload size to prevent DoS attacks.
+     */
+    protected function validatePayloadSize(string $payload, int $webhookId): ?Response
+    {
+        $payloadSize = strlen($payload);
+
+        if ($payloadSize > self::MAX_PAYLOAD_SIZE) {
+            Log::warning('Uptelligence webhook payload too large', [
+                'webhook_id' => $webhookId,
+                'payload_size' => $payloadSize,
+                'max_size' => self::MAX_PAYLOAD_SIZE,
+            ]);
+
+            return response('Payload too large', 413);
+        }
+
+        if ($payloadSize === 0) {
+            Log::warning('Uptelligence webhook empty payload', [
+                'webhook_id' => $webhookId,
+            ]);
+
+            return response('Empty payload', 400);
+        }
+
+        return null;
+    }
+
+    /**
+     * Parse and validate JSON payload with depth limit.
+     *
+     * Returns the parsed data or null on failure.
+     */
+    protected function parseAndValidateJson(string $payload, int $webhookId): ?array
+    {
+        // Parse with depth limit to prevent deeply nested JSON attacks
+        $data = json_decode($payload, true, self::MAX_JSON_DEPTH);
+
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            $errorMessage = json_last_error_msg();
+
+            // Check for depth-related errors
+            if (json_last_error() === JSON_ERROR_DEPTH) {
+                Log::warning('Uptelligence webhook JSON too deeply nested', [
+                    'webhook_id' => $webhookId,
+                    'max_depth' => self::MAX_JSON_DEPTH,
+                ]);
+            } else {
+                Log::warning('Uptelligence webhook invalid JSON payload', [
+                    'webhook_id' => $webhookId,
+                    'error' => $errorMessage,
+                ]);
+            }
+
+            return null;
+        }
+
+        // Ensure payload is an object/array (not a scalar)
+        if (! is_array($data)) {
+            Log::warning('Uptelligence webhook payload must be an object', [
+                'webhook_id' => $webhookId,
+                'type' => gettype($data),
+            ]);
+
+            return null;
+        }
+
+        return $data;
+    }
+
+    /**
+     * Validate payload structure based on provider.
+     *
+     * Performs basic schema validation to ensure expected fields exist.
+     */
+    protected function validatePayloadStructure(array $data, UptelligenceWebhook $webhook): ?Response
+    {
+        $provider = $webhook->provider;
+        $webhookId = $webhook->id;
+
+        // Validate based on provider
+        $validation = match ($provider) {
+            UptelligenceWebhook::PROVIDER_GITHUB => $this->validateGitHubPayload($data),
+            UptelligenceWebhook::PROVIDER_GITLAB => $this->validateGitLabPayload($data),
+            UptelligenceWebhook::PROVIDER_NPM => $this->validateNpmPayload($data),
+            UptelligenceWebhook::PROVIDER_PACKAGIST => $this->validatePackagistPayload($data),
+            default => $this->validateCustomPayload($data),
+        };
+
+        if ($validation !== true) {
+            Log::warning('Uptelligence webhook payload validation failed', [
+                'webhook_id' => $webhookId,
+                'provider' => $provider,
+                'error' => $validation,
+            ]);
+
+            return response('Invalid payload structure: ' . $validation, 400);
+        }
+
+        return null;
+    }
+
+    /**
+     * Validate GitHub webhook payload structure.
+     */
+    protected function validateGitHubPayload(array $data): string|bool
+    {
+        // GitHub webhooks should have an action field for most events
+        // Release events have release object
+        if (isset($data['release'])) {
+            if (! is_array($data['release'])) {
+                return 'release must be an object';
+            }
+        }
+
+        // Check for suspiciously large arrays (potential DoS)
+        if ($this->hasExcessiveArraySize($data)) {
+            return 'payload contains excessively large arrays';
+        }
+
+        return true;
+    }
+
+    /**
+     * Validate GitLab webhook payload structure.
+     */
+    protected function validateGitLabPayload(array $data): string|bool
+    {
+        // GitLab webhooks typically have object_kind
+        if (isset($data['object_kind']) && ! is_string($data['object_kind'])) {
+            return 'object_kind must be a string';
+        }
+
+        if ($this->hasExcessiveArraySize($data)) {
+            return 'payload contains excessively large arrays';
+        }
+
+        return true;
+    }
+
+    /**
+     * Validate npm webhook payload structure.
+     */
+    protected function validateNpmPayload(array $data): string|bool
+    {
+        // npm webhooks should have event field
+        if (isset($data['event']) && ! is_string($data['event'])) {
+            return 'event must be a string';
+        }
+
+        if ($this->hasExcessiveArraySize($data)) {
+            return 'payload contains excessively large arrays';
+        }
+
+        return true;
+    }
+
+    /**
+     * Validate Packagist webhook payload structure.
+     */
+    protected function validatePackagistPayload(array $data): string|bool
+    {
+        // Packagist should have package or repository info
+        if (isset($data['versions']) && ! is_array($data['versions'])) {
+            return 'versions must be an array';
+        }
+
+        if ($this->hasExcessiveArraySize($data)) {
+            return 'payload contains excessively large arrays';
+        }
+
+        return true;
+    }
+
+    /**
+     * Validate custom webhook payload structure.
+     */
+    protected function validateCustomPayload(array $data): string|bool
+    {
+        // Minimal validation for custom webhooks
+        if ($this->hasExcessiveArraySize($data)) {
+            return 'payload contains excessively large arrays';
+        }
+
+        return true;
+    }
+
+    /**
+     * Check if payload contains excessively large arrays (DoS protection).
+     *
+     * Recursively checks array sizes to prevent memory exhaustion
+     * from payloads with many elements at any nesting level.
+     */
+    protected function hasExcessiveArraySize(array $data, int $maxElements = 1000, int $depth = 0): bool
+    {
+        // Prevent infinite recursion
+        if ($depth > self::MAX_JSON_DEPTH) {
+            return true;
+        }
+
+        $totalElements = 0;
+
+        foreach ($data as $value) {
+            $totalElements++;
+
+            if ($totalElements > $maxElements) {
+                return true;
+            }
+
+            if (is_array($value)) {
+                if ($this->hasExcessiveArraySize($value, $maxElements - $totalElements, $depth + 1)) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 }

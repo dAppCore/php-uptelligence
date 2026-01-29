@@ -19,6 +19,11 @@ class UpstreamTodo extends Model
     use HasFactory;
     use SoftDeletes;
 
+    /**
+     * The table associated with the model.
+     */
+    protected $table = 'uptelligence_upstream_todos';
+
     // Types
     public const TYPE_FEATURE = 'feature';
 

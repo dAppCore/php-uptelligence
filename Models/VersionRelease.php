@@ -20,6 +20,11 @@ class VersionRelease extends Model
     use HasFactory;
     use SoftDeletes;
 
+    /**
+     * The table associated with the model.
+     */
+    protected $table = 'uptelligence_version_releases';
+
     // Storage disk options
     public const DISK_LOCAL = 'local';
 

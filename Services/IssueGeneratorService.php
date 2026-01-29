@@ -188,7 +188,7 @@ class IssueGeneratorService
         Log::error('Uptelligence: GitHub issue creation failed', [
             'todo_id' => $todo->id,
             'status' => $response->status(),
-            'body' => substr($response->body(), 0, 500),
+            'body' => $this->redactSensitiveData(substr($response->body(), 0, 500)),
         ]);
 
         return null;
@@ -258,10 +258,41 @@ class IssueGeneratorService
         Log::error('Uptelligence: Gitea issue creation failed', [
             'todo_id' => $todo->id,
             'status' => $response->status(),
-            'body' => substr($response->body(), 0, 500),
+            'body' => $this->redactSensitiveData(substr($response->body(), 0, 500)),
         ]);
 
         return null;
+    }
+
+    /**
+     * Redact sensitive data from log messages.
+     *
+     * Removes or masks API tokens and credentials that might
+     * appear in error responses.
+     */
+    protected function redactSensitiveData(string $content): string
+    {
+        $patterns = [
+            // GitHub tokens (ghp_..., gho_..., github_pat_...)
+            '/ghp_[a-zA-Z0-9]+/' => '[REDACTED_GITHUB_TOKEN]',
+            '/gho_[a-zA-Z0-9]+/' => '[REDACTED_GITHUB_TOKEN]',
+            '/github_pat_[a-zA-Z0-9_]+/' => '[REDACTED_GITHUB_TOKEN]',
+            // Generic bearer tokens
+            '/Bearer\s+[a-zA-Z0-9._-]+/' => 'Bearer [REDACTED]',
+            // Gitea tokens
+            '/token\s+[a-zA-Z0-9]{20,}/' => 'token [REDACTED]',
+            // Authorization header values
+            '/["\']?[Aa]uthorization["\']?\s*:\s*["\']?[^"\'}\s]+/' => '"authorization": "[REDACTED]"',
+            // Generic token patterns in JSON
+            '/["\']?token["\']?\s*:\s*["\']?[a-zA-Z0-9._-]{20,}["\']?/' => '"token": "[REDACTED]"',
+        ];
+
+        $redacted = $content;
+        foreach ($patterns as $pattern => $replacement) {
+            $redacted = preg_replace($pattern, $replacement, $redacted);
+        }
+
+        return $redacted;
     }
 
     /**

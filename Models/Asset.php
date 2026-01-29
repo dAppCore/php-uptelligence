@@ -17,6 +17,11 @@ class Asset extends Model
 {
     use HasFactory;
 
+    /**
+     * The table associated with the model.
+     */
+    protected $table = 'uptelligence_assets';
+
     // Asset types
     public const TYPE_COMPOSER = 'composer';
 
