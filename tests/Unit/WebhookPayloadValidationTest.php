@@ -5,9 +5,7 @@ declare(strict_types=1);
 namespace Core\Mod\Uptelligence\Tests\Unit;
 
 use Core\Mod\Uptelligence\Controllers\Api\WebhookController;
-use Core\Mod\Uptelligence\Models\UptelligenceWebhook;
 use Core\Mod\Uptelligence\Services\WebhookReceiverService;
-use Illuminate\Http\Request;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use ReflectionClass;
@@ -133,7 +131,7 @@ class WebhookPayloadValidationTest extends \Orchestra\Testbench\TestCase
         // Create JSON with 35 levels of nesting (exceeds max depth of 32)
         $nested = '"value"';
         for ($i = 0; $i < 35; $i++) {
-            $nested = '{"level' . $i . '":' . $nested . '}';
+            $nested = '{"level'.$i.'":'.$nested.'}';
         }
 
         $result = $this->invokeMethod($this->controller, 'parseAndValidateJson', [$nested, 1]);

@@ -34,8 +34,8 @@ class WebhookSignatureVerificationTest extends \Orchestra\Testbench\TestCase
         ]);
 
         $payload = '{"action":"published","release":{"tag_name":"v1.0.0"}}';
-        $validSignature = 'sha256=' . hash_hmac('sha256', $payload, 'test-secret-key');
-        $invalidSignature = 'sha256=' . hash_hmac('sha256', $payload, 'wrong-secret');
+        $validSignature = 'sha256='.hash_hmac('sha256', $payload, 'test-secret-key');
+        $invalidSignature = 'sha256='.hash_hmac('sha256', $payload, 'wrong-secret');
 
         // Valid signature should pass
         $this->assertTrue($webhook->verifySignature($payload, $validSignature));
@@ -119,7 +119,7 @@ class WebhookSignatureVerificationTest extends \Orchestra\Testbench\TestCase
         ]);
 
         $payload = '{"version":"2.0.0","event":"release"}';
-        $validSignature = 'sha256=' . hash_hmac('sha256', $payload, 'custom-secret-key');
+        $validSignature = 'sha256='.hash_hmac('sha256', $payload, 'custom-secret-key');
 
         $this->assertTrue($webhook->verifySignature($payload, $validSignature));
         $this->assertFalse($webhook->verifySignature($payload, 'sha256=invalid'));
@@ -177,9 +177,9 @@ class WebhookSignatureVerificationTest extends \Orchestra\Testbench\TestCase
         $payload = '{"test":"payload"}';
 
         // Both old and new secrets should work during grace period
-        $newSignature = 'sha256=' . hash_hmac('sha256', $payload, 'new-secret');
-        $oldSignature = 'sha256=' . hash_hmac('sha256', $payload, 'old-secret');
-        $wrongSignature = 'sha256=' . hash_hmac('sha256', $payload, 'wrong-secret');
+        $newSignature = 'sha256='.hash_hmac('sha256', $payload, 'new-secret');
+        $oldSignature = 'sha256='.hash_hmac('sha256', $payload, 'old-secret');
+        $wrongSignature = 'sha256='.hash_hmac('sha256', $payload, 'wrong-secret');
 
         $this->assertTrue($webhook->verifySignature($payload, $newSignature));
         $this->assertTrue($webhook->verifySignature($payload, $oldSignature));
@@ -202,8 +202,8 @@ class WebhookSignatureVerificationTest extends \Orchestra\Testbench\TestCase
 
         $payload = '{"test":"payload"}';
 
-        $newSignature = 'sha256=' . hash_hmac('sha256', $payload, 'new-secret');
-        $oldSignature = 'sha256=' . hash_hmac('sha256', $payload, 'old-secret');
+        $newSignature = 'sha256='.hash_hmac('sha256', $payload, 'new-secret');
+        $oldSignature = 'sha256='.hash_hmac('sha256', $payload, 'old-secret');
 
         $this->assertTrue($webhook->verifySignature($payload, $newSignature));
         $this->assertFalse($webhook->verifySignature($payload, $oldSignature));
@@ -257,7 +257,7 @@ class WebhookSignatureVerificationTest extends \Orchestra\Testbench\TestCase
 
         // Payload with null bytes and binary data
         $binaryPayload = "binary\x00payload\xff\xfe";
-        $validSignature = 'sha256=' . hash_hmac('sha256', $binaryPayload, 'binary-secret');
+        $validSignature = 'sha256='.hash_hmac('sha256', $binaryPayload, 'binary-secret');
 
         $this->assertTrue($webhook->verifySignature($binaryPayload, $validSignature));
     }
@@ -274,7 +274,7 @@ class WebhookSignatureVerificationTest extends \Orchestra\Testbench\TestCase
         ]);
 
         $emptyPayload = '';
-        $validSignature = 'sha256=' . hash_hmac('sha256', $emptyPayload, 'empty-payload-secret');
+        $validSignature = 'sha256='.hash_hmac('sha256', $emptyPayload, 'empty-payload-secret');
 
         $this->assertTrue($webhook->verifySignature($emptyPayload, $validSignature));
     }
@@ -291,8 +291,8 @@ class WebhookSignatureVerificationTest extends \Orchestra\Testbench\TestCase
         ]);
 
         // 1MB payload
-        $largePayload = str_repeat('{"data":"' . str_repeat('x', 1000) . '"}', 1000);
-        $validSignature = 'sha256=' . hash_hmac('sha256', $largePayload, 'large-payload-secret');
+        $largePayload = str_repeat('{"data":"'.str_repeat('x', 1000).'"}', 1000);
+        $validSignature = 'sha256='.hash_hmac('sha256', $largePayload, 'large-payload-secret');
 
         $this->assertTrue($webhook->verifySignature($largePayload, $validSignature));
     }

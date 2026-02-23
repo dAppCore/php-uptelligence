@@ -4,15 +4,15 @@ declare(strict_types=1);
 
 namespace Core\Mod\Uptelligence\View\Modal\Admin;
 
+use Core\Mod\Uptelligence\Models\DiffCache;
+use Core\Mod\Uptelligence\Models\Vendor;
+use Core\Mod\Uptelligence\Models\VersionRelease;
 use Illuminate\Contracts\View\View;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Title;
 use Livewire\Attributes\Url;
 use Livewire\Component;
 use Livewire\WithPagination;
-use Core\Mod\Uptelligence\Models\DiffCache;
-use Core\Mod\Uptelligence\Models\Vendor;
-use Core\Mod\Uptelligence\Models\VersionRelease;
 
 #[Title('Diff Viewer')]
 class DiffViewer extends Component

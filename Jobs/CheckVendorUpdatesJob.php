@@ -4,15 +4,15 @@ declare(strict_types=1);
 
 namespace Core\Mod\Uptelligence\Jobs;
 
+use Core\Mod\Uptelligence\Models\Vendor;
+use Core\Mod\Uptelligence\Services\AssetTrackerService;
+use Core\Mod\Uptelligence\Services\VendorUpdateCheckerService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
-use Core\Mod\Uptelligence\Models\Vendor;
-use Core\Mod\Uptelligence\Services\AssetTrackerService;
-use Core\Mod\Uptelligence\Services\VendorUpdateCheckerService;
 
 /**
  * Job to check vendors and assets for upstream updates.

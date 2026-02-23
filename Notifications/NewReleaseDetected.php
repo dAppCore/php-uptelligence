@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace Core\Mod\Uptelligence\Notifications;
 
+use Core\Mod\Uptelligence\Models\Vendor;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
-use Core\Mod\Uptelligence\Models\Vendor;
 
 /**
  * NewReleaseDetected - notification when a vendor releases a new version.

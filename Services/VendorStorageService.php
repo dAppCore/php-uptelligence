@@ -4,12 +4,12 @@ declare(strict_types=1);
 
 namespace Core\Mod\Uptelligence\Services;
 
+use Core\Mod\Uptelligence\Models\Vendor;
+use Core\Mod\Uptelligence\Models\VersionRelease;
 use Illuminate\Contracts\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
-use Core\Mod\Uptelligence\Models\Vendor;
-use Core\Mod\Uptelligence\Models\VersionRelease;
 use RuntimeException;
 use Symfony\Component\Process\Process;
 

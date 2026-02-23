@@ -8,8 +8,8 @@ declare(strict_types=1);
  * Webhook endpoints for receiving vendor release notifications.
  */
 
-use Illuminate\Support\Facades\Route;
 use Core\Mod\Uptelligence\Controllers\Api\WebhookController;
+use Illuminate\Support\Facades\Route;
 
 /*
 |--------------------------------------------------------------------------

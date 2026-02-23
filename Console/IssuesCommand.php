@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace Core\Mod\Uptelligence\Console;
 
-use Illuminate\Console\Command;
 use Core\Mod\Uptelligence\Models\UpstreamTodo;
 use Core\Mod\Uptelligence\Models\Vendor;
+use Illuminate\Console\Command;
 
 class IssuesCommand extends Command
 {

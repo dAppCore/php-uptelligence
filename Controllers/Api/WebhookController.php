@@ -4,14 +4,14 @@ declare(strict_types=1);
 
 namespace Core\Mod\Uptelligence\Controllers\Api;
 
-use Illuminate\Http\Request;
-use Illuminate\Http\Response;
-use Illuminate\Routing\Controller;
-use Illuminate\Support\Facades\Log;
 use Core\Mod\Uptelligence\Jobs\ProcessUptelligenceWebhook;
 use Core\Mod\Uptelligence\Models\UptelligenceWebhook;
 use Core\Mod\Uptelligence\Models\UptelligenceWebhookDelivery;
 use Core\Mod\Uptelligence\Services\WebhookReceiverService;
+use Illuminate\Http\Request;
+use Illuminate\Http\Response;
+use Illuminate\Routing\Controller;
+use Illuminate\Support\Facades\Log;
 
 /**
  * WebhookController - receives incoming vendor release webhooks.
@@ -383,7 +383,7 @@ class WebhookController extends Controller
                 'error' => $validation,
             ]);
 
-            return response('Invalid payload structure: ' . $validation, 400);
+            return response('Invalid payload structure: '.$validation, 400);
         }
 
         return null;

@@ -4,13 +4,13 @@ declare(strict_types=1);
 
 namespace Core\Mod\Uptelligence\View\Modal\Admin;
 
+use Core\Mod\Uptelligence\Models\Asset;
 use Illuminate\Contracts\View\View;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Title;
 use Livewire\Attributes\Url;
 use Livewire\Component;
 use Livewire\WithPagination;
-use Core\Mod\Uptelligence\Models\Asset;
 
 #[Title('Asset Manager')]
 class AssetManager extends Component

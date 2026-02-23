@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace Core\Mod\Uptelligence\Console;
 
-use Illuminate\Console\Command;
 use Core\Mod\Uptelligence\Models\UptelligenceDigest;
 use Core\Mod\Uptelligence\Services\UptelligenceDigestService;
+use Illuminate\Console\Command;
 
 /**
  * Send Uptelligence digest emails to subscribed users.

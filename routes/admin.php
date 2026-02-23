@@ -1,6 +1,5 @@
 <?php
 
-use Illuminate\Support\Facades\Route;
 use Core\Mod\Uptelligence\View\Modal\Admin\AssetManager;
 use Core\Mod\Uptelligence\View\Modal\Admin\Dashboard;
 use Core\Mod\Uptelligence\View\Modal\Admin\DiffViewer;
@@ -8,6 +7,7 @@ use Core\Mod\Uptelligence\View\Modal\Admin\DigestPreferences;
 use Core\Mod\Uptelligence\View\Modal\Admin\TodoList;
 use Core\Mod\Uptelligence\View\Modal\Admin\VendorManager;
 use Core\Mod\Uptelligence\View\Modal\Admin\WebhookManager;
+use Illuminate\Support\Facades\Route;
 
 /*
 |--------------------------------------------------------------------------

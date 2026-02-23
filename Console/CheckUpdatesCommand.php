@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace Core\Mod\Uptelligence\Console;
 
-use Illuminate\Console\Command;
 use Core\Mod\Uptelligence\Models\Vendor;
 use Core\Mod\Uptelligence\Services\AssetTrackerService;
 use Core\Mod\Uptelligence\Services\VendorUpdateCheckerService;
+use Illuminate\Console\Command;
 
 /**
  * Artisan command to check vendors and assets for upstream updates.

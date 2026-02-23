@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace Core\Mod\Uptelligence\Services;
 
+use Core\Mod\Uptelligence\Models\UpstreamTodo;
+use Core\Mod\Uptelligence\Models\Vendor;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\RateLimiter;
-use Core\Mod\Uptelligence\Models\UpstreamTodo;
-use Core\Mod\Uptelligence\Models\Vendor;
 
 /**
  * Vendor Update Checker Service - checks upstream sources for new releases.

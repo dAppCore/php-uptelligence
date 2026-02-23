@@ -4,13 +4,13 @@ declare(strict_types=1);
 
 namespace Core\Mod\Uptelligence\Services;
 
-use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\Log;
 use Core\Mod\Uptelligence\Models\UpstreamTodo;
 use Core\Mod\Uptelligence\Models\UptelligenceDigest;
 use Core\Mod\Uptelligence\Models\Vendor;
 use Core\Mod\Uptelligence\Models\VersionRelease;
 use Core\Mod\Uptelligence\Notifications\SendUptelligenceDigest;
+use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Log;
 
 /**
  * UptelligenceDigestService - generates and sends digest email notifications.

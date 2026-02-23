@@ -4,14 +4,14 @@ declare(strict_types=1);
 
 namespace Core\Mod\Uptelligence\View\Modal\Admin;
 
-use Illuminate\Contracts\View\View;
-use Livewire\Attributes\Computed;
-use Livewire\Attributes\Title;
-use Livewire\Component;
 use Core\Mod\Uptelligence\Models\Asset;
 use Core\Mod\Uptelligence\Models\UpstreamTodo;
 use Core\Mod\Uptelligence\Models\Vendor;
 use Core\Mod\Uptelligence\Models\VersionRelease;
+use Illuminate\Contracts\View\View;
+use Livewire\Attributes\Computed;
+use Livewire\Attributes\Title;
+use Livewire\Component;
 
 #[Title('Uptelligence Dashboard')]
 class Dashboard extends Component

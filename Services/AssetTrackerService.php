@@ -5,12 +5,12 @@ declare(strict_types=1);
 namespace Core\Mod\Uptelligence\Services;
 
 use Carbon\Carbon;
+use Core\Mod\Uptelligence\Models\Asset;
+use Core\Mod\Uptelligence\Models\AssetVersion;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\RateLimiter;
-use Core\Mod\Uptelligence\Models\Asset;
-use Core\Mod\Uptelligence\Models\AssetVersion;
 
 /**
  * Asset Tracker Service - monitors and updates package dependencies.

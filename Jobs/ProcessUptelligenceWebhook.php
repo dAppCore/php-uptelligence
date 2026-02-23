@@ -4,15 +4,15 @@ declare(strict_types=1);
 
 namespace Core\Mod\Uptelligence\Jobs;
 
+use Core\Mod\Uptelligence\Models\UptelligenceWebhookDelivery;
+use Core\Mod\Uptelligence\Notifications\NewReleaseDetected;
+use Core\Mod\Uptelligence\Services\WebhookReceiverService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
-use Core\Mod\Uptelligence\Models\UptelligenceWebhookDelivery;
-use Core\Mod\Uptelligence\Notifications\NewReleaseDetected;
-use Core\Mod\Uptelligence\Services\WebhookReceiverService;
 
 /**
  * ProcessUptelligenceWebhook - async processing of incoming vendor webhooks.
