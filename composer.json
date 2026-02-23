@@ -1,7 +1,13 @@
 {
     "name": "host-uk/core-uptelligence",
     "description": "Upstream vendor tracking and dependency intelligence",
-    "keywords": ["laravel", "vendor", "tracking", "dependencies", "upstream"],
+    "keywords": [
+        "laravel",
+        "vendor",
+        "tracking",
+        "dependencies",
+        "upstream"
+    ],
     "license": "EUPL-1.2",
     "require": {
         "php": "^8.2",
@@ -19,7 +25,8 @@
     },
     "autoload-dev": {
         "psr-4": {
-            "Core\\Mod\\Uptelligence\\Tests\\": "tests/"
+            "Core\\Mod\\Uptelligence\\Tests\\": "tests/",
+            "Tests\\": "tests/"
         }
     },
     "extra": {
@@ -40,5 +47,12 @@
         }
     },
     "minimum-stability": "dev",
-    "prefer-stable": true
+    "prefer-stable": true,
+    "repositories": [
+        {
+            "name": "core",
+            "type": "path",
+            "url": "../php-framework"
+        }
+    ]
 }
