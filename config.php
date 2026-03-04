@@ -192,9 +192,9 @@ return [
     */
     'gitea' => [
         'enabled' => env('UPSTREAM_GITEA_ENABLED', true),
-        'url' => env('GITEA_URL', 'https://git.host.uk'),
-        'token' => env('GITEA_TOKEN'),
-        'org' => env('GITEA_ORG', 'host-uk'),
+        'url' => env('GITEA_URL', 'https://forge.lthn.ai'),
+        'token' => env('GITEA_TOKEN', env('FORGE_TOKEN')),
+        'org' => env('GITEA_ORG', 'core'),
     ],
 
     /*
