@@ -1,5 +1,5 @@
 {
-    "name": "core/php-uptelligence",
+    "name": "lthn/php-uptelligence",
     "description": "Upstream vendor tracking and dependency intelligence",
     "keywords": [
         "laravel",
@@ -11,7 +11,7 @@
     "license": "EUPL-1.2",
     "require": {
         "php": "^8.2",
-        "core/php": "*"
+        "lthn/php": "*"
     },
     "require-dev": {
         "laravel/pint": "^1.18",
@@ -54,5 +54,8 @@
             "type": "path",
             "url": "../php"
         }
-    ]
+    ],
+    "replace": {
+        "core/php-uptelligence": "self.version"
+    }
 }
