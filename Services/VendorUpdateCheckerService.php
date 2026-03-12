@@ -6,6 +6,8 @@ namespace Core\Mod\Uptelligence\Services;
 
 use Core\Mod\Uptelligence\Models\UpstreamTodo;
 use Core\Mod\Uptelligence\Models\Vendor;
+use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\RateLimiter;
@@ -17,6 +19,13 @@ use Illuminate\Support\Facades\RateLimiter;
  */
 class VendorUpdateCheckerService
 {
+    /**
+     * In-memory cache for AltumCode plugin versions.
+     *
+     * Avoids redundant HTTP calls when checking multiple plugins in one run.
+     */
+    protected ?array $altumPluginVersionsCache = null;
+
     /**
      * Check all active vendors for updates.
      *
@@ -42,6 +51,8 @@ class VendorUpdateCheckerService
     {
         // Determine check method based on source type and git URL
         $result = match (true) {
+            $this->isAltumPlatform($vendor) && $vendor->isLicensed() => $this->checkAltumProduct($vendor),
+            $this->isAltumPlatform($vendor) && $vendor->isPlugin() => $this->checkAltumPlugin($vendor),
             $vendor->isOss() && $this->isGitHubUrl($vendor->git_repo_url) => $this->checkGitHub($vendor),
             $vendor->isOss() && $this->isGiteaUrl($vendor->git_repo_url) => $this->checkGitea($vendor),
             default => $this->skipCheck($vendor),
@@ -89,10 +100,10 @@ class VendorUpdateCheckerService
             ->retry(3, function (int $attempt) {
                 return (int) pow(2, $attempt - 1) * 1000;
             }, function (\Exception $exception) {
-                if ($exception instanceof \Illuminate\Http\Client\ConnectionException) {
+                if ($exception instanceof ConnectionException) {
                     return true;
                 }
-                if ($exception instanceof \Illuminate\Http\Client\RequestException) {
+                if ($exception instanceof RequestException) {
                     $status = $exception->response?->status();
 
                     return $status >= 500 || $status === 429;
@@ -271,6 +282,125 @@ class VendorUpdateCheckerService
             latestVersion: $latestVersion,
             releaseInfo: ['tag' => $tags[0]['name'] ?? null]
         );
+    }
+
+    /**
+     * Check if vendor belongs to the AltumCode platform.
+     */
+    protected function isAltumPlatform(Vendor $vendor): bool
+    {
+        return $vendor->plugin_platform === Vendor::PLATFORM_ALTUM;
+    }
+
+    /**
+     * Check an AltumCode licensed product for updates.
+     *
+     * Fetches the product's info.php endpoint (e.g. https://66analytics.com/info.php)
+     * and reads the latest_release_version from the JSON response.
+     */
+    protected function checkAltumProduct(Vendor $vendor): array
+    {
+        $url = "https://{$vendor->slug}.com/info.php";
+
+        try {
+            $response = Http::timeout(5)->get($url);
+        } catch (\Exception $e) {
+            Log::warning('Uptelligence: AltumCode product check failed', [
+                'vendor' => $vendor->slug,
+                'url' => $url,
+                'error' => $e->getMessage(),
+            ]);
+
+            return $this->errorResult("AltumCode product check failed: {$e->getMessage()}");
+        }
+
+        if (! $response->successful()) {
+            Log::warning('Uptelligence: AltumCode product info request failed', [
+                'vendor' => $vendor->slug,
+                'status' => $response->status(),
+            ]);
+
+            return $this->errorResult("AltumCode product info error: {$response->status()}");
+        }
+
+        $data = $response->json();
+        $latestVersion = $this->normaliseVersion($data['latest_release_version'] ?? '');
+
+        return $this->buildResult(
+            vendor: $vendor,
+            latestVersion: $latestVersion,
+            releaseInfo: [
+                'source' => 'altum_product',
+                'url' => $url,
+            ]
+        );
+    }
+
+    /**
+     * Check an AltumCode plugin for updates.
+     *
+     * Fetches the plugin versions endpoint and looks up the plugin by ID
+     * (stripping the 'altum-plugin-' prefix from the vendor slug).
+     */
+    protected function checkAltumPlugin(Vendor $vendor): array
+    {
+        $versions = $this->getAltumPluginVersions();
+
+        if ($versions === null) {
+            return $this->errorResult('Failed to fetch AltumCode plugin versions');
+        }
+
+        // Strip 'altum-plugin-' prefix from slug to get the plugin ID
+        $pluginId = str_replace('altum-plugin-', '', $vendor->slug);
+
+        if (! isset($versions[$pluginId])) {
+            return $this->errorResult("Plugin '{$pluginId}' not found in AltumCode registry");
+        }
+
+        $latestVersion = $this->normaliseVersion($versions[$pluginId]['version'] ?? '');
+
+        return $this->buildResult(
+            vendor: $vendor,
+            latestVersion: $latestVersion,
+            releaseInfo: [
+                'source' => 'altum_plugin',
+                'plugin_id' => $pluginId,
+            ]
+        );
+    }
+
+    /**
+     * Fetch AltumCode plugin versions with in-memory caching.
+     *
+     * @return array<string, array{version: string}>|null
+     */
+    protected function getAltumPluginVersions(): ?array
+    {
+        if ($this->altumPluginVersionsCache !== null) {
+            return $this->altumPluginVersionsCache;
+        }
+
+        try {
+            $response = Http::timeout(5)->get('https://dev.altumcode.com/plugins-versions');
+        } catch (\Exception $e) {
+            Log::warning('Uptelligence: AltumCode plugin versions fetch failed', [
+                'error' => $e->getMessage(),
+            ]);
+
+            return null;
+        }
+
+        if (! $response->successful()) {
+            Log::warning('Uptelligence: AltumCode plugin versions request failed', [
+                'status' => $response->status(),
+            ]);
+
+            return null;
+        }
+
+        $this->altumPluginVersionsCache = $response->json() ?? [];
+
+        return $this->altumPluginVersionsCache;
     }
 
     /**
