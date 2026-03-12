@@ -99,6 +99,7 @@ class Boot extends ServiceProvider
         $event->command(Console\CheckUpdatesCommand::class);
         $event->command(Console\SendDigestsCommand::class);
         $event->command(Console\SyncForgeCommand::class);
+        $event->command(Console\SyncAltumVersionsCommand::class);
     }
 
     /**
