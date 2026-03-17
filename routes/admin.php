@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 use Core\Mod\Uptelligence\View\Modal\Admin\AssetManager;
 use Core\Mod\Uptelligence\View\Modal\Admin\Dashboard;
 use Core\Mod\Uptelligence\View\Modal\Admin\DiffViewer;
