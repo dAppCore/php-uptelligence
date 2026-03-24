@@ -20,13 +20,13 @@ composer run test             # Run all tests with Pest
 
 **Artisan commands** (when installed in a host application):
 ```bash
-php artisan upstream:check              # Display vendor status table
-php artisan upstream:analyze            # Run AI diff analysis between versions
-php artisan upstream:issues             # Create GitHub/Gitea issues from todos
-php artisan upstream:check-updates      # Poll registries (GitHub, Gitea, AltumCode)
-php artisan upstream:send-digests       # Send scheduled digest emails
-php artisan upstream:sync-forge         # Sync with internal Gitea instance
-php artisan upstream:sync-altum-versions # Read deployed Altum versions from disk
+php artisan upstream:check                  # Display vendor status table
+php artisan upstream:analyze                # Run AI diff analysis between versions
+php artisan upstream:issues                 # Create GitHub/Gitea issues from todos
+php artisan upstream:sync-forge             # Sync with internal Gitea instance
+php artisan uptelligence:check-updates      # Poll registries (GitHub, Gitea, AltumCode)
+php artisan uptelligence:send-digests       # Send scheduled digest emails
+php artisan uptelligence:sync-altum-versions # Read deployed Altum versions from disk
 ```
 
 ## Architecture
