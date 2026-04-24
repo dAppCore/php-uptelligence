@@ -134,7 +134,8 @@ class WebhookController extends Controller
     protected function extractSignature(Request $request, string $provider): ?string
     {
         return match ($provider) {
-            UptelligenceWebhook::PROVIDER_GITHUB => $this->extractGitHubSignature($request),
+            UptelligenceWebhook::PROVIDER_GITHUB,
+            UptelligenceWebhook::PROVIDER_FORGEJO => $this->extractGitHubSignature($request),
             UptelligenceWebhook::PROVIDER_GITLAB => $request->header('X-Gitlab-Token'),
             UptelligenceWebhook::PROVIDER_NPM => $request->header('X-Npm-Signature'),
             UptelligenceWebhook::PROVIDER_PACKAGIST => $request->header('X-Hub-Signature'),
@@ -187,6 +188,7 @@ class WebhookController extends Controller
     {
         return match ($provider) {
             UptelligenceWebhook::PROVIDER_GITHUB => $this->determineGitHubEventType($request, $data),
+            UptelligenceWebhook::PROVIDER_FORGEJO => $this->determineForgejoEventType($request, $data),
             UptelligenceWebhook::PROVIDER_GITLAB => $this->determineGitLabEventType($request, $data),
             UptelligenceWebhook::PROVIDER_NPM => $this->determineNpmEventType($data),
             UptelligenceWebhook::PROVIDER_PACKAGIST => $this->determinePackagistEventType($data),
@@ -203,6 +205,19 @@ class WebhookController extends Controller
         $action = $data['action'] ?? 'unknown';
 
         return "github.{$event}.{$action}";
+    }
+
+    /**
+     * Determine Forgejo event type.
+     *
+     * Forgejo uses X-Gitea-Event header (Gitea fork).
+     */
+    protected function determineForgejoEventType(Request $request, array $data): string
+    {
+        $event = $request->header('X-Gitea-Event', $request->header('X-GitHub-Event', 'unknown'));
+        $action = $data['action'] ?? 'unknown';
+
+        return "forgejo.{$event}.{$action}";
     }
 
     /**
@@ -369,7 +384,8 @@ class WebhookController extends Controller
 
         // Validate based on provider
         $validation = match ($provider) {
-            UptelligenceWebhook::PROVIDER_GITHUB => $this->validateGitHubPayload($data),
+            UptelligenceWebhook::PROVIDER_GITHUB,
+            UptelligenceWebhook::PROVIDER_FORGEJO => $this->validateGitHubPayload($data),
             UptelligenceWebhook::PROVIDER_GITLAB => $this->validateGitLabPayload($data),
             UptelligenceWebhook::PROVIDER_NPM => $this->validateNpmPayload($data),
             UptelligenceWebhook::PROVIDER_PACKAGIST => $this->validatePackagistPayload($data),

@@ -52,12 +52,15 @@ class UptelligenceWebhook extends Model
 
     public const PROVIDER_CUSTOM = 'custom';
 
+    public const PROVIDER_FORGEJO = 'forgejo';
+
     public const PROVIDERS = [
         self::PROVIDER_GITHUB,
         self::PROVIDER_GITLAB,
         self::PROVIDER_NPM,
         self::PROVIDER_PACKAGIST,
         self::PROVIDER_CUSTOM,
+        self::PROVIDER_FORGEJO,
     ];
 
     // Maximum consecutive failures before auto-disable
@@ -221,7 +224,8 @@ class UptelligenceWebhook extends Model
     protected function verifyAgainstSecret(string $payload, string $signature, string $secret): bool
     {
         return match ($this->provider) {
-            self::PROVIDER_GITHUB => $this->verifyGitHubSignature($payload, $signature, $secret),
+            self::PROVIDER_GITHUB,
+            self::PROVIDER_FORGEJO => $this->verifyGitHubSignature($payload, $signature, $secret),
             self::PROVIDER_GITLAB => $this->verifyGitLabSignature($signature, $secret),
             self::PROVIDER_NPM => $this->verifyNpmSignature($payload, $signature, $secret),
             self::PROVIDER_PACKAGIST => $this->verifyPackagistSignature($payload, $signature, $secret),
@@ -383,6 +387,7 @@ class UptelligenceWebhook extends Model
             self::PROVIDER_NPM => 'npm',
             self::PROVIDER_PACKAGIST => 'Packagist',
             self::PROVIDER_CUSTOM => 'Custom',
+            self::PROVIDER_FORGEJO => 'Forgejo',
             default => ucfirst($this->provider),
         };
     }
@@ -398,6 +403,7 @@ class UptelligenceWebhook extends Model
             self::PROVIDER_NPM => 'cube',
             self::PROVIDER_PACKAGIST => 'archive-box',
             self::PROVIDER_CUSTOM => 'cog-6-tooth',
+            self::PROVIDER_FORGEJO => 'code-bracket',
             default => 'globe-alt',
         };
     }
