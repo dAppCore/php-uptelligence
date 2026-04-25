@@ -21,6 +21,17 @@ use Illuminate\Support\Facades\Route;
 |
 */
 
+Route::prefix('admin/uptelligence')->middleware(['web', 'auth'])->group(function () {
+    Route::get('/', Dashboard::class)->name('admin.uptelligence');
+    Route::get('/vendors', VendorManager::class)->name('admin.uptelligence.vendors');
+    Route::get('/vendors/{vendor}', VendorManager::class)->name('admin.uptelligence.vendors.show');
+    Route::get('/assets', AssetManager::class)->name('admin.uptelligence.assets');
+    Route::get('/assets/{asset}/diff', DiffViewer::class)->name('admin.uptelligence.assets.diff');
+    Route::get('/todos', TodoList::class)->name('admin.uptelligence.todos');
+    Route::get('/digests', DigestPreferences::class)->name('admin.uptelligence.digests');
+    Route::get('/webhooks', WebhookManager::class)->name('admin.uptelligence.webhooks');
+});
+
 Route::prefix('hub/admin/uptelligence')->middleware(['web', 'auth'])->group(function () {
     Route::get('/', Dashboard::class)->name('hub.admin.uptelligence');
     Route::get('/vendors', VendorManager::class)->name('hub.admin.uptelligence.vendors');

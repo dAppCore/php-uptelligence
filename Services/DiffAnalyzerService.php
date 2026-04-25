@@ -136,6 +136,20 @@ class DiffAnalyzerService
     }
 
     /**
+     * Return the non-noise file diffs for AI and UI consumers.
+     */
+    public function getSignificantDiffs(mixed $asset, string $fromVersion, string $toVersion): array
+    {
+        $result = $this->generateDiff($asset, $fromVersion, $toVersion);
+
+        return collect($result->byFile)
+            ->reject(fn (array $file): bool => $this->shouldIgnore((string) ($file['file_path'] ?? '')))
+            ->filter(fn (array $file): bool => trim((string) ($file['diff_content'] ?? $file['new_content'] ?? '')) !== '')
+            ->values()
+            ->all();
+    }
+
+    /**
      * Analyse differences between two versions.
      */
     public function analyze(string $previousVersion, string $currentVersion): VersionRelease
@@ -169,6 +183,9 @@ class DiffAnalyzerService
                 'files_added' => $stats['added'],
                 'files_modified' => $stats['modified'],
                 'files_removed' => $stats['removed'],
+                'files_changed' => array_sum($stats),
+                'additions' => (int) $release->diffs()->sum('lines_added'),
+                'deletions' => (int) $release->diffs()->sum('lines_removed'),
                 'analyzed_at' => now(),
             ]);
 
@@ -447,7 +464,7 @@ class DiffAnalyzerService
             'lines_added' => $lineStats['added'],
             'lines_removed' => $lineStats['removed'],
             'metadata' => [
-                'truncated' => strlen($diff) >= self::MAX_DIFF_BYTES,
+                'truncated' => strlen($diff) >= $this->maxDiffBytes(),
             ],
         ];
     }
@@ -564,6 +581,9 @@ class DiffAnalyzerService
                         'files_added' => collect($result->byFile)->where('change_type', DiffCache::CHANGE_ADDED)->count(),
                         'files_modified' => collect($result->byFile)->where('change_type', DiffCache::CHANGE_MODIFIED)->count(),
                         'files_removed' => collect($result->byFile)->where('change_type', DiffCache::CHANGE_REMOVED)->count(),
+                        'files_changed' => $result->filesChanged,
+                        'additions' => $result->additions,
+                        'deletions' => $result->deletions,
                         'analyzed_at' => now(),
                     ],
                 );
@@ -573,13 +593,17 @@ class DiffAnalyzerService
                 foreach ($result->byFile as $file) {
                     $cache = DiffCache::create([
                         'version_release_id' => $release->id,
+                        'from_version' => $fromVersion,
+                        'to_version' => $toVersion,
                         'file_path' => $file['file_path'],
                         'change_type' => $file['change_type'],
                         'category' => $file['category'],
                         'diff_content' => $file['diff_content'],
+                        'diff_hash' => hash('sha256', (string) ($file['diff_content'] ?? '')),
                         'new_content' => $file['new_content'] ?? null,
                         'lines_added' => $file['lines_added'],
                         'lines_removed' => $file['lines_removed'],
+                        'expires_at' => now()->addSeconds((int) config('uptelligence.analysis.cache_ttl', 30 * 24 * 60 * 60)),
                         'metadata' => array_merge($file['metadata'] ?? [], [
                             'analysis_cache_key' => $result->cacheKey(),
                         ]),
@@ -638,11 +662,15 @@ class DiffAnalyzerService
 
                 DiffCache::create([
                     'version_release_id' => $release->id,
+                    'from_version' => $release->previous_version,
+                    'to_version' => $release->version,
                     'file_path' => $file,
                     'change_type' => DiffCache::CHANGE_ADDED,
                     'new_content' => $content,
+                    'diff_hash' => hash('sha256', (string) $content),
                     'lines_added' => $lineStats,
                     'lines_removed' => 0,
+                    'expires_at' => now()->addSeconds((int) config('uptelligence.analysis.cache_ttl', 30 * 24 * 60 * 60)),
                     'category' => DiffCache::detectCategory($file),
                 ]);
                 $stats['added']++;
@@ -655,11 +683,15 @@ class DiffAnalyzerService
 
                 DiffCache::create([
                     'version_release_id' => $release->id,
+                    'from_version' => $release->previous_version,
+                    'to_version' => $release->version,
                     'file_path' => $file,
                     'change_type' => DiffCache::CHANGE_MODIFIED,
                     'diff_content' => $diff,
+                    'diff_hash' => hash('sha256', $diff),
                     'lines_added' => $lineStats['added'],
                     'lines_removed' => $lineStats['removed'],
+                    'expires_at' => now()->addSeconds((int) config('uptelligence.analysis.cache_ttl', 30 * 24 * 60 * 60)),
                     'category' => DiffCache::detectCategory($file),
                 ]);
                 $stats['modified']++;
@@ -669,8 +701,12 @@ class DiffAnalyzerService
             foreach ($changes['removed'] as $file) {
                 DiffCache::create([
                     'version_release_id' => $release->id,
+                    'from_version' => $release->previous_version,
+                    'to_version' => $release->version,
                     'file_path' => $file,
                     'change_type' => DiffCache::CHANGE_REMOVED,
+                    'diff_hash' => hash('sha256', $file),
+                    'expires_at' => now()->addSeconds((int) config('uptelligence.analysis.cache_ttl', 30 * 24 * 60 * 60)),
                     'category' => DiffCache::detectCategory($file),
                 ]);
                 $stats['removed']++;
@@ -758,11 +794,18 @@ class DiffAnalyzerService
 
     protected function truncateDiff(string $content): string
     {
-        if (strlen($content) <= self::MAX_DIFF_BYTES) {
+        $maxBytes = $this->maxDiffBytes();
+
+        if (strlen($content) <= $maxBytes) {
             return $content;
         }
 
-        return substr($content, 0, self::MAX_DIFF_BYTES)."\n[diff truncated at 50KB]\n";
+        return substr($content, 0, $maxBytes)."\n[diff truncated at 50KB]\n";
+    }
+
+    protected function maxDiffBytes(): int
+    {
+        return (int) config('uptelligence.analysis.max_diff_size', self::MAX_DIFF_BYTES);
     }
 
     protected function countDiffLines(string $diff): array

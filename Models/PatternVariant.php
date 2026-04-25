@@ -19,13 +19,29 @@ class PatternVariant extends Model
 
     protected $fillable = [
         'pattern_id',
+        'asset_id',
         'name',
         'code',
         'notes',
+        'from_version',
+        'to_version',
+        'file_path',
+        'line_range',
+        'context',
+        'found_at',
+    ];
+
+    protected $casts = [
+        'found_at' => 'datetime',
     ];
 
     public function pattern(): BelongsTo
     {
         return $this->belongsTo(Pattern::class);
+    }
+
+    public function asset(): BelongsTo
+    {
+        return $this->belongsTo(Asset::class);
     }
 }

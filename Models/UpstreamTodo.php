@@ -61,6 +61,9 @@ class UpstreamTodo extends Model
 
     protected $fillable = [
         'vendor_id',
+        'workspace_id',
+        'asset_id',
+        'analysis_log_id',
         'from_version',
         'to_version',
         'type',
@@ -69,7 +72,9 @@ class UpstreamTodo extends Model
         'description',
         'port_notes',
         'priority',
+        'priority_label',
         'effort',
+        'estimated_effort_hours',
         'has_conflicts',
         'conflict_reason',
         'files',
@@ -80,6 +85,9 @@ class UpstreamTodo extends Model
         'assigned_to',
         'ai_analysis',
         'ai_confidence',
+        'issue_url',
+        'issue_platform',
+        'suggested_solution',
         'started_at',
         'completed_at',
     ];
@@ -89,9 +97,14 @@ class UpstreamTodo extends Model
         'dependencies' => 'array',
         'tags' => 'array',
         'ai_analysis' => 'array',
+        'suggested_solution' => 'array',
         'ai_confidence' => 'decimal:2',
         'has_conflicts' => 'boolean',
         'priority' => 'integer',
+        'estimated_effort_hours' => 'integer',
+        'workspace_id' => 'integer',
+        'asset_id' => 'integer',
+        'analysis_log_id' => 'integer',
         'started_at' => 'datetime',
         'completed_at' => 'datetime',
     ];
@@ -102,10 +115,25 @@ class UpstreamTodo extends Model
         return $this->belongsTo(Vendor::class);
     }
 
+    public function asset(): BelongsTo
+    {
+        return $this->belongsTo(Asset::class);
+    }
+
+    public function analysisLog(): BelongsTo
+    {
+        return $this->belongsTo(AnalysisLog::class);
+    }
+
+    public function workspace(): BelongsTo
+    {
+        return $this->belongsTo(\Core\Tenant\Models\Workspace::class);
+    }
+
     // Scopes
     public function scopePending($query)
     {
-        return $query->where('status', self::STATUS_PENDING);
+        return $query->whereIn('status', [self::STATUS_PENDING, 'open']);
     }
 
     public function scopeInProgress($query)
@@ -115,7 +143,7 @@ class UpstreamTodo extends Model
 
     public function scopeCompleted($query)
     {
-        return $query->whereIn('status', [self::STATUS_PORTED, self::STATUS_SKIPPED, self::STATUS_WONT_PORT]);
+        return $query->whereIn('status', [self::STATUS_PORTED, self::STATUS_SKIPPED, self::STATUS_WONT_PORT, 'done']);
     }
 
     public function scopeQuickWins($query)
@@ -149,12 +177,12 @@ class UpstreamTodo extends Model
 
     public function isPending(): bool
     {
-        return $this->status === self::STATUS_PENDING;
+        return in_array($this->status, [self::STATUS_PENDING, 'open'], true);
     }
 
     public function isCompleted(): bool
     {
-        return in_array($this->status, [self::STATUS_PORTED, self::STATUS_SKIPPED, self::STATUS_WONT_PORT]);
+        return in_array($this->status, [self::STATUS_PORTED, self::STATUS_SKIPPED, self::STATUS_WONT_PORT, 'done'], true);
     }
 
     public function markInProgress(): void
@@ -199,6 +227,10 @@ class UpstreamTodo extends Model
 
     public function getPriorityLabel(): string
     {
+        if (! empty($this->priority_label)) {
+            return ucfirst((string) $this->priority_label);
+        }
+
         return match (true) {
             $this->priority >= 8 => 'Critical',
             $this->priority >= 6 => 'High',
@@ -235,8 +267,10 @@ class UpstreamTodo extends Model
     public function getStatusBadgeClass(): string
     {
         return match ($this->status) {
+            'open' => 'bg-yellow-100 text-yellow-800',
             self::STATUS_PENDING => 'bg-yellow-100 text-yellow-800',
             self::STATUS_IN_PROGRESS => 'bg-blue-100 text-blue-800',
+            'done' => 'bg-green-100 text-green-800',
             self::STATUS_PORTED => 'bg-green-100 text-green-800',
             self::STATUS_SKIPPED => 'bg-gray-100 text-gray-800',
             self::STATUS_WONT_PORT => 'bg-red-100 text-red-800',

@@ -34,9 +34,14 @@ class VendorManager extends Component
 
     public bool $showVendorModal = false;
 
-    public function mount(): void
+    public function mount(mixed $vendor = null): void
     {
         $this->checkHadesAccess();
+
+        if (is_numeric($vendor)) {
+            $this->selectedVendorId = (int) $vendor;
+            $this->showVendorModal = true;
+        }
     }
 
     #[Computed]

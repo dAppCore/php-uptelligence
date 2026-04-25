@@ -7,7 +7,10 @@ namespace Core\Mod\Uptelligence\Services;
 use Core\Mod\Uptelligence\Data\AIAnalysis;
 use Core\Mod\Uptelligence\Data\DiffResult;
 use Core\Mod\Uptelligence\Models\AnalysisLog;
+use Core\Mod\Uptelligence\Models\Asset;
 use Core\Mod\Uptelligence\Models\DiffCache;
+use Core\Mod\Uptelligence\Models\Pattern;
+use Core\Mod\Uptelligence\Models\PatternVariant;
 use Core\Mod\Uptelligence\Models\UpstreamTodo;
 use Core\Mod\Uptelligence\Models\VersionRelease;
 use Illuminate\Http\Client\ConnectionException;
@@ -16,6 +19,7 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\Str;
 use Throwable;
 
 /**
@@ -39,7 +43,7 @@ class AIAnalyzerService
     {
         $config = config('upstream.ai');
         $this->provider = $config['provider'] ?? 'anthropic';
-        $this->model = $config['model'] ?? 'claude-sonnet-4-20250514';
+        $this->model = (string) config('uptelligence.analysis.ai_model', $config['model'] ?? 'claude-opus-4-7');
         $this->maxTokens = $config['max_tokens'] ?? 4096;
         $this->temperature = $config['temperature'] ?? 0.3;
         $this->apiKey = match ($this->provider) {
@@ -84,6 +88,263 @@ class AIAnalyzerService
     public function analyse(DiffResult|array $diff): AIAnalysis
     {
         return $this->analyze($diff);
+    }
+
+    public function analyseDiff(Asset $asset, string $fromVersion, string $toVersion): AnalysisLog
+    {
+        $diff = app(DiffAnalyzerService::class)->generateDiff($asset, $fromVersion, $toVersion);
+        $analysis = $this->analyze($diff);
+
+        $log = AnalysisLog::create([
+            'vendor_id' => $asset->vendor_id,
+            'asset_id' => $asset->id,
+            'asset_version_id' => $asset->versions()->where('version', $toVersion)->value('id'),
+            'action' => AnalysisLog::ACTION_ANALYSIS_COMPLETED,
+            'context' => [
+                'diff' => $diff->toArray(),
+                'analysis' => $analysis->toArray(),
+            ],
+            'from_version' => $fromVersion,
+            'to_version' => $toVersion,
+            'ai_model' => $this->model,
+            'categories' => $analysis->categories,
+            'summary' => $analysis->summary,
+            'findings' => $analysis->findings,
+            'analyzed_at' => now(),
+        ]);
+
+        $this->detectPatterns($log);
+        $this->createTodosFromFindings($asset, $log, $analysis, $fromVersion, $toVersion);
+
+        return $log;
+    }
+
+    public function analyzeDiff(Asset $asset, string $fromVersion, string $toVersion): AnalysisLog
+    {
+        return $this->analyseDiff($asset, $fromVersion, $toVersion);
+    }
+
+    public function detectPatterns(AnalysisLog $analysis): void
+    {
+        $findings = collect($analysis->findings ?? []);
+
+        if ($findings->isEmpty()) {
+            return;
+        }
+
+        try {
+            Pattern::query()
+                ->where('is_active', true)
+                ->get()
+                ->each(function (Pattern $pattern) use ($analysis, $findings): void {
+                    $rule = $pattern->detection_rule ?? [];
+
+                    $findings->each(function (mixed $finding) use ($pattern, $rule, $analysis): void {
+                        $finding = is_array($finding) ? $finding : [
+                            'title' => (string) $finding,
+                            'description' => (string) $finding,
+                        ];
+
+                        if (! $this->matchesPatternRule($finding, $rule)) {
+                            return;
+                        }
+
+                        PatternVariant::create([
+                            'pattern_id' => $pattern->id,
+                            'asset_id' => $analysis->asset_id,
+                            'from_version' => $analysis->from_version,
+                            'to_version' => $analysis->to_version,
+                            'file_path' => data_get($finding, 'file_path') ?? data_get($finding, 'files.0'),
+                            'line_range' => data_get($finding, 'line_range'),
+                            'context' => data_get($finding, 'description') ?? data_get($finding, 'title'),
+                            'found_at' => now(),
+                        ]);
+                    });
+                });
+        } catch (Throwable $e) {
+            Log::debug('Uptelligence: pattern detection skipped', [
+                'analysis_log_id' => $analysis->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    protected function matchesPatternRule(array $finding, array $rule): bool
+    {
+        $text = Str::lower(implode(' ', array_filter([
+            data_get($finding, 'kind'),
+            data_get($finding, 'category'),
+            data_get($finding, 'type'),
+            data_get($finding, 'title'),
+            data_get($finding, 'description'),
+            implode(' ', (array) data_get($finding, 'files', [])),
+        ])));
+
+        $match = $rule['match'] ?? $rule['regex'] ?? null;
+        if (is_string($match) && $match !== '') {
+            $pattern = str_starts_with($match, '/') ? $match : '/'.str_replace('/', '\/', $match).'/i';
+
+            return @preg_match($pattern, $text) === 1;
+        }
+
+        $contains = $rule['contains'] ?? $rule['context'] ?? null;
+        if (is_string($contains) && $contains !== '') {
+            return str_contains($text, Str::lower($contains));
+        }
+
+        return false;
+    }
+
+    protected function createTodosFromFindings(
+        Asset $asset,
+        AnalysisLog $log,
+        AIAnalysis $analysis,
+        string $fromVersion,
+        string $toVersion
+    ): void {
+        $findings = $analysis->findings;
+
+        if ($findings === [] && $analysis->actionItems !== []) {
+            $findings = collect($analysis->actionItems)
+                ->map(fn (string $item): array => [
+                    'kind' => $analysis->categories[0] ?? 'feature',
+                    'title' => $item,
+                    'description' => $item,
+                ])
+                ->all();
+        }
+
+        foreach ($findings as $finding) {
+            if (! is_array($finding)) {
+                $finding = [
+                    'kind' => 'feature',
+                    'title' => (string) $finding,
+                    'description' => (string) $finding,
+                ];
+            }
+
+            UpstreamTodo::create([
+                'workspace_id' => $asset->vendor?->workspace_id,
+                'vendor_id' => $asset->vendor_id,
+                'asset_id' => $asset->id,
+                'analysis_log_id' => $log->id,
+                'from_version' => $fromVersion,
+                'to_version' => $toVersion,
+                'type' => $this->todoTypeFromFinding($finding),
+                'status' => UpstreamTodo::STATUS_PENDING,
+                'title' => $this->todoTitleFromFinding($asset, $finding),
+                'description' => $this->todoDescriptionFromFinding($finding, $analysis),
+                'priority' => $this->numericPriorityFromFinding($finding),
+                'priority_label' => $this->priorityLabelFromFinding($finding),
+                'effort' => $this->effortLabelFromFinding($finding),
+                'estimated_effort_hours' => $this->estimatedHoursFromFinding($finding),
+                'files' => (array) data_get($finding, 'files', []),
+                'tags' => array_values(array_filter([
+                    'uptelligence',
+                    $this->todoTypeFromFinding($finding),
+                    $this->priorityLabelFromFinding($finding),
+                ])),
+                'ai_analysis' => $finding,
+                'suggested_solution' => $this->suggestedSolutionFromFinding($finding),
+                'ai_confidence' => data_get($finding, 'confidence', 0.85),
+            ]);
+        }
+    }
+
+    protected function todoTitleFromFinding(Asset $asset, array $finding): string
+    {
+        $title = trim((string) (data_get($finding, 'title') ?? data_get($finding, 'summary') ?? ''));
+
+        return $title !== '' ? $title : "Review {$asset->name} upstream change";
+    }
+
+    protected function todoDescriptionFromFinding(array $finding, AIAnalysis $analysis): string
+    {
+        $description = trim((string) (data_get($finding, 'description') ?? data_get($finding, 'details') ?? ''));
+
+        return $description !== '' ? $description : $analysis->summary;
+    }
+
+    protected function todoTypeFromFinding(array $finding): string
+    {
+        $kind = Str::lower((string) (data_get($finding, 'kind') ?? data_get($finding, 'category') ?? data_get($finding, 'type') ?? 'feature'));
+
+        return match (true) {
+            str_contains($kind, 'security') => UpstreamTodo::TYPE_SECURITY,
+            str_contains($kind, 'breaking'), str_contains($kind, 'api') => UpstreamTodo::TYPE_API,
+            str_contains($kind, 'bug'), str_contains($kind, 'fix') => UpstreamTodo::TYPE_BUGFIX,
+            str_contains($kind, 'dependency') => UpstreamTodo::TYPE_DEPENDENCY,
+            str_contains($kind, 'refactor') => UpstreamTodo::TYPE_REFACTOR,
+            str_contains($kind, 'ui'), str_contains($kind, 'style') => UpstreamTodo::TYPE_UI,
+            default => UpstreamTodo::TYPE_FEATURE,
+        };
+    }
+
+    protected function priorityLabelFromFinding(array $finding): string
+    {
+        $kind = Str::lower((string) (data_get($finding, 'kind') ?? data_get($finding, 'category') ?? data_get($finding, 'type') ?? ''));
+        $priority = Str::lower((string) (data_get($finding, 'priority') ?? data_get($finding, 'severity') ?? ''));
+
+        return match (true) {
+            str_contains($kind, 'security'), str_contains($priority, 'critical') => 'critical',
+            str_contains($kind, 'breaking'), str_contains($priority, 'high') => 'high',
+            str_contains($priority, 'medium'), str_contains($kind, 'feature') => 'medium',
+            default => 'low',
+        };
+    }
+
+    protected function numericPriorityFromFinding(array $finding): int
+    {
+        $priority = data_get($finding, 'priority');
+        if (is_numeric($priority)) {
+            return max(1, min(10, (int) $priority));
+        }
+
+        return match ($this->priorityLabelFromFinding($finding)) {
+            'critical' => 9,
+            'high' => 7,
+            'medium' => 5,
+            default => 3,
+        };
+    }
+
+    protected function effortLabelFromFinding(array $finding): string
+    {
+        $effort = Str::lower((string) data_get($finding, 'effort', ''));
+
+        return match (true) {
+            str_contains($effort, 'low'), str_contains($effort, 'small') => UpstreamTodo::EFFORT_LOW,
+            str_contains($effort, 'high'), str_contains($effort, 'large') => UpstreamTodo::EFFORT_HIGH,
+            default => UpstreamTodo::EFFORT_MEDIUM,
+        };
+    }
+
+    protected function estimatedHoursFromFinding(array $finding): int
+    {
+        $hours = data_get($finding, 'estimated_effort_hours') ?? data_get($finding, 'effort_hours');
+
+        if (is_numeric($hours)) {
+            return max(1, (int) $hours);
+        }
+
+        return match ($this->effortLabelFromFinding($finding)) {
+            UpstreamTodo::EFFORT_LOW => 1,
+            UpstreamTodo::EFFORT_HIGH => 8,
+            default => 4,
+        };
+    }
+
+    protected function suggestedSolutionFromFinding(array $finding): array
+    {
+        $solution = data_get($finding, 'suggested_solution') ?? data_get($finding, 'solution') ?? data_get($finding, 'steps') ?? [];
+
+        if (is_array($solution)) {
+            return $solution;
+        }
+
+        $solution = trim((string) $solution);
+
+        return $solution === '' ? [] : ['steps' => [$solution]];
     }
 
     protected function cachedAnalysis(DiffResult $diff): ?AIAnalysis

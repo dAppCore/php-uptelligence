@@ -43,9 +43,14 @@ class Vendor extends Model
     public const PLATFORM_OTHER = 'other';
 
     protected $fillable = [
+        'workspace_id',
         'slug',
         'name',
+        'type',
         'vendor_name',
+        'url',
+        'registry',
+        'registry_id',
         'source_type',
         'plugin_platform',
         'git_repo_url',
@@ -56,6 +61,7 @@ class Vendor extends Model
         'priority_paths',
         'target_repo',
         'target_branch',
+        'status',
         'is_active',
         'last_checked_at',
         'last_analyzed_at',
@@ -65,6 +71,7 @@ class Vendor extends Model
         'path_mapping' => 'array',
         'ignored_paths' => 'array',
         'priority_paths' => 'array',
+        'workspace_id' => 'integer',
         'is_active' => 'boolean',
         'last_checked_at' => 'datetime',
         'last_analyzed_at' => 'datetime',
@@ -79,6 +86,11 @@ class Vendor extends Model
     public function releases(): HasMany
     {
         return $this->hasMany(VersionRelease::class);
+    }
+
+    public function assets(): HasMany
+    {
+        return $this->hasMany(Asset::class);
     }
 
     public function logs(): HasMany
@@ -178,17 +190,17 @@ class Vendor extends Model
     // Source type helpers
     public function isLicensed(): bool
     {
-        return $this->source_type === self::SOURCE_LICENSED;
+        return ($this->source_type ?? $this->type) === self::SOURCE_LICENSED;
     }
 
     public function isOss(): bool
     {
-        return $this->source_type === self::SOURCE_OSS;
+        return ($this->source_type ?? $this->type) === self::SOURCE_OSS;
     }
 
     public function isPlugin(): bool
     {
-        return $this->source_type === self::SOURCE_PLUGIN;
+        return ($this->source_type ?? $this->type) === self::SOURCE_PLUGIN;
     }
 
     public function canGitSync(): bool

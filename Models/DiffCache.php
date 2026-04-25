@@ -61,19 +61,25 @@ class DiffCache extends Model
 
     protected $fillable = [
         'version_release_id',
+        'asset_id',
+        'from_version',
+        'to_version',
         'file_path',
         'change_type',
         'category',
         'diff_content',
+        'diff_hash',
         'new_content',
         'lines_added',
         'lines_removed',
+        'expires_at',
         'metadata',
     ];
 
     protected $casts = [
         'lines_added' => 'integer',
         'lines_removed' => 'integer',
+        'expires_at' => 'datetime',
         'metadata' => 'array',
     ];
 
@@ -81,6 +87,11 @@ class DiffCache extends Model
     public function versionRelease(): BelongsTo
     {
         return $this->belongsTo(VersionRelease::class);
+    }
+
+    public function asset(): BelongsTo
+    {
+        return $this->belongsTo(Asset::class);
     }
 
     // Scopes

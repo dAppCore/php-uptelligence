@@ -32,6 +32,7 @@ class VersionRelease extends Model
 
     protected $fillable = [
         'vendor_id',
+        'asset_version_id',
         'version',
         'previous_version',
         'status',
@@ -40,6 +41,10 @@ class VersionRelease extends Model
         'files_added',
         'files_modified',
         'files_removed',
+        'files_changed',
+        'additions',
+        'deletions',
+        'release_notes',
         'todos_created',
         'storage_path',
         'storage_disk',
@@ -47,6 +52,7 @@ class VersionRelease extends Model
         'file_hash',
         'file_size',
         'released_at',
+        'published_at',
         'analyzed_at',
         'archived_at',
         'last_downloaded_at',
@@ -58,9 +64,13 @@ class VersionRelease extends Model
         'files_added' => 'integer',
         'files_modified' => 'integer',
         'files_removed' => 'integer',
+        'files_changed' => 'integer',
+        'additions' => 'integer',
+        'deletions' => 'integer',
         'todos_created' => 'integer',
         'file_size' => 'integer',
         'released_at' => 'datetime',
+        'published_at' => 'datetime',
         'analyzed_at' => 'datetime',
         'archived_at' => 'datetime',
         'last_downloaded_at' => 'datetime',
@@ -70,6 +80,11 @@ class VersionRelease extends Model
     public function vendor(): BelongsTo
     {
         return $this->belongsTo(Vendor::class);
+    }
+
+    public function assetVersion(): BelongsTo
+    {
+        return $this->belongsTo(AssetVersion::class);
     }
 
     public function diffs(): HasMany
@@ -119,6 +134,10 @@ class VersionRelease extends Model
     // Helpers
     public function getTotalChanges(): int
     {
+        if ($this->files_changed !== null) {
+            return $this->files_changed;
+        }
+
         return $this->files_added + $this->files_modified + $this->files_removed;
     }
 

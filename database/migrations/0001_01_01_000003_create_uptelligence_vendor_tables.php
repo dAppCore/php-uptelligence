@@ -200,7 +200,7 @@ return new class extends Migration
                 $table->id();
                 $table->foreignId('asset_id')->constrained('uptelligence_assets')->cascadeOnDelete();
                 $table->string('version', 64);
-                $table->text('changelog')->nullable();
+                $table->string('changelog_url', 512)->nullable();
                 $table->json('breaking_changes')->nullable();
                 $table->string('download_url', 512)->nullable();
                 $table->string('local_path', 512)->nullable();

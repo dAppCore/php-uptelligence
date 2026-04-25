@@ -48,6 +48,11 @@ class Boot extends ServiceProvider
             'upstream'
         );
 
+        $this->mergeConfigFrom(
+            __DIR__.'/config.php',
+            'uptelligence'
+        );
+
         $this->app->singleton(\Core\Mod\Uptelligence\Services\IssueGeneratorService::class);
         $this->app->singleton(\Core\Mod\Uptelligence\Services\UpstreamPlanGeneratorService::class);
         $this->app->singleton(\Core\Mod\Uptelligence\Services\VendorStorageService::class);

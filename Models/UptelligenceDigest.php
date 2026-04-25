@@ -32,6 +32,7 @@ class UptelligenceDigest extends Model
     protected $fillable = [
         'user_id',
         'workspace_id',
+        'recipient_email',
         'frequency',
         'last_sent_at',
         'preferences',
@@ -81,8 +82,8 @@ class UptelligenceDigest extends Model
     /**
      * Scope to digests that are due to be sent.
      *
-     * Daily: last_sent_at is null or older than 24 hours
-     * Weekly: last_sent_at is null or older than 7 days
+     * Daily: last_sent_at is null or before yesterday
+     * Weekly: last_sent_at is null or before 7 days ago
      * Monthly: last_sent_at is null or older than 30 days
      */
     public function scopeDueForDigest(Builder $query, string $frequency): Builder
@@ -98,7 +99,7 @@ class UptelligenceDigest extends Model
             ->withFrequency($frequency)
             ->where(function (Builder $q) use ($cutoff) {
                 $q->whereNull('last_sent_at')
-                    ->orWhere('last_sent_at', '<=', $cutoff);
+                    ->orWhere('last_sent_at', '<', $cutoff);
             });
     }
 
@@ -224,9 +225,9 @@ class UptelligenceDigest extends Model
         }
 
         return match ($this->frequency) {
-            self::FREQUENCY_DAILY => $this->last_sent_at->lte(now()->subDay()),
-            self::FREQUENCY_WEEKLY => $this->last_sent_at->lte(now()->subWeek()),
-            self::FREQUENCY_MONTHLY => $this->last_sent_at->lte(now()->subMonth()),
+            self::FREQUENCY_DAILY => $this->last_sent_at->lt(now()->subDay()),
+            self::FREQUENCY_WEEKLY => $this->last_sent_at->lt(now()->subWeek()),
+            self::FREQUENCY_MONTHLY => $this->last_sent_at->lt(now()->subMonth()),
             default => false,
         };
     }

@@ -7,6 +7,7 @@ namespace Core\Mod\Uptelligence\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
  * Analysis Log - audit trail for upstream analysis operations.
@@ -43,14 +44,28 @@ class AnalysisLog extends Model
 
     protected $fillable = [
         'vendor_id',
+        'asset_id',
+        'asset_version_id',
         'version_release_id',
         'action',
         'context',
         'error_message',
+        'from_version',
+        'to_version',
+        'ai_model',
+        'categories',
+        'summary',
+        'findings',
+        'analyzed_at',
     ];
 
     protected $casts = [
         'context' => 'array',
+        'asset_id' => 'integer',
+        'asset_version_id' => 'integer',
+        'categories' => 'array',
+        'findings' => 'array',
+        'analyzed_at' => 'datetime',
     ];
 
     // Relationships
@@ -62,6 +77,21 @@ class AnalysisLog extends Model
     public function versionRelease(): BelongsTo
     {
         return $this->belongsTo(VersionRelease::class);
+    }
+
+    public function asset(): BelongsTo
+    {
+        return $this->belongsTo(Asset::class);
+    }
+
+    public function assetVersion(): BelongsTo
+    {
+        return $this->belongsTo(AssetVersion::class);
+    }
+
+    public function upstreamTodos(): HasMany
+    {
+        return $this->hasMany(UpstreamTodo::class);
     }
 
     // Scopes

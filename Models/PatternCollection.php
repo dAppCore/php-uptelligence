@@ -20,12 +20,15 @@ class PatternCollection extends Model
         'slug',
         'name',
         'description',
+        'patterns',
         'pattern_ids',
         'required_assets',
+        'created_by',
         'is_active',
     ];
 
     protected $casts = [
+        'patterns' => 'array',
         'pattern_ids' => 'array',
         'required_assets' => 'array',
         'is_active' => 'boolean',
@@ -40,11 +43,13 @@ class PatternCollection extends Model
     // Helpers
     public function getPatterns()
     {
-        if (empty($this->pattern_ids)) {
+        $patternIds = $this->pattern_ids ?? $this->patterns;
+
+        if (empty($patternIds)) {
             return collect();
         }
 
-        return Pattern::whereIn('id', $this->pattern_ids)->get();
+        return Pattern::whereIn('id', $patternIds)->get();
     }
 
     public function getRequiredAssetsObjects(): array

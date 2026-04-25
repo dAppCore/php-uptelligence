@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Core\Mod\Uptelligence\Services;
 
+use Core\Mod\Uptelligence\Jobs\SendUptelligenceDigestJob;
 use Core\Mod\Uptelligence\Models\UpstreamTodo;
 use Core\Mod\Uptelligence\Models\UptelligenceDigest;
 use Core\Mod\Uptelligence\Models\Vendor;
@@ -20,6 +21,14 @@ use Illuminate\Support\Facades\Log;
  */
 class UptelligenceDigestService
 {
+    public function sendDigests(): void
+    {
+        UptelligenceDigest::enabled()
+            ->get()
+            ->filter(fn (UptelligenceDigest $digest): bool => $digest->isDue())
+            ->each(fn (UptelligenceDigest $digest): mixed => SendUptelligenceDigestJob::dispatch($digest));
+    }
+
     /**
      * Generate digest content for a specific user's preferences.
      *
@@ -176,6 +185,22 @@ class UptelligenceDigestService
 
             return false;
         }
+    }
+
+    public function composeDigestEmail(UptelligenceDigest $digest, iterable $todos): array
+    {
+        $todoCollection = collect($todos);
+        $security = $todoCollection->where('type', UpstreamTodo::TYPE_SECURITY)->count();
+        $breaking = $todoCollection->filter(fn (UpstreamTodo $todo): bool => in_array($todo->type, [UpstreamTodo::TYPE_API], true))->count();
+        $frequency = $digest->getFrequencyLabel();
+
+        return [
+            'subject' => "Uptelligence {$frequency}: {$security} security updates, {$breaking} breaking changes",
+            'html' => '<h1>Uptelligence '.$frequency.'</h1>'
+                .'<p>'.$todoCollection->count().' upstream todo(s) need review.</p>'
+                .'<ul>'.$todoCollection->map(fn (UpstreamTodo $todo): string => '<li><strong>'
+                    .e($todo->getPriorityLabel()).'</strong> '.e($todo->title).'</li>')->implode('').'</ul>',
+        ];
     }
 
     /**

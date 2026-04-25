@@ -785,6 +785,66 @@ class IssueGeneratorService
         return true;
     }
 
+    public function createIssue(UpstreamTodoModel $todo): array
+    {
+        $platform = $this->resolveTodoIssuePlatform($todo);
+
+        $issue = match ($platform) {
+            'github' => $this->createGitHubIssue($todo),
+            'forge' => $this->createGiteaIssue($todo),
+            default => null,
+        };
+
+        if (! is_array($issue)) {
+            return [
+                'status' => 'skipped',
+                'issue_platform' => $platform,
+            ];
+        }
+
+        return [
+            'status' => 'created',
+            'issue_platform' => $platform,
+            'issue_id' => data_get($issue, 'number') ?? data_get($issue, 'id'),
+            'issue_url' => data_get($issue, 'html_url') ?? data_get($issue, 'url') ?? $todo->issue_url,
+        ];
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    public function createIssuesFromAnalysis(AnalysisLog $analysis): array
+    {
+        return UpstreamTodoModel::query()
+            ->where('analysis_log_id', $analysis->getKey())
+            ->whereNull('issue_url')
+            ->get()
+            ->map(fn (UpstreamTodoModel $todo): array => $this->createIssue($todo))
+            ->values()
+            ->all();
+    }
+
+    protected function resolveTodoIssuePlatform(UpstreamTodoModel $todo): string
+    {
+        $workspace = null;
+        if ($todo->workspace_id) {
+            $workspace = $todo->relationLoaded('workspace') ? $todo->workspace : $todo->workspace()->first();
+        }
+
+        $platform = data_get($workspace, 'issue_platform')
+            ?? data_get($workspace, 'settings.issue_platform')
+            ?? $todo->issue_platform
+            ?? config('uptelligence.issue_platform')
+            ?? config('upstream.issue_platform')
+            ?? 'forge';
+
+        return match (Str::lower((string) $platform)) {
+            'github' => 'github',
+            'forge', 'gitea', 'forgejo' => 'forge',
+            default => 'forge',
+        };
+    }
+
     /**
      * Create GitHub issues for all pending todos.
      */
@@ -823,7 +883,7 @@ class IssueGeneratorService
                 if ($useGitea) {
                     $issue = $this->createGiteaIssue($todo);
                 } else {
-                    $issue = $this->createGitHubIssue($todo);
+                    $issue = $this->createIssue($todo);
                 }
 
                 if ($issue) {
@@ -897,12 +957,15 @@ class IssueGeneratorService
 
         if ($response->successful()) {
             $issue = $response->json();
+            $issueUrl = $issue['html_url'] ?? $issue['url'] ?? null;
 
             $todo->update([
                 'github_issue_number' => $issue['number'],
+                'issue_url' => $issueUrl,
+                'issue_platform' => 'github',
             ]);
 
-            AnalysisLog::logIssueCreated($todo, $issue['html_url']);
+            AnalysisLog::logIssueCreated($todo, (string) $issueUrl);
 
             return $issue;
         }
@@ -972,7 +1035,13 @@ class IssueGeneratorService
             ]);
 
             $issueUrl = "{$this->giteaUrl}/{$owner}/{$repo}/issues/{$issue['number']}";
+
             AnalysisLog::logIssueCreated($todo, $issueUrl);
+
+            $todo->update([
+                'issue_url' => $issueUrl,
+                'issue_platform' => 'forge',
+            ]);
 
             return $issue;
         }
@@ -1046,6 +1115,18 @@ class IssueGeneratorService
 
         if ($todo->port_notes) {
             $body .= "## Porting Notes\n\n{$todo->port_notes}\n\n";
+        }
+
+        if (! empty($todo->suggested_solution)) {
+            $body .= "## Suggested Solution\n\n";
+            foreach ($todo->suggested_solution['steps'] ?? $todo->suggested_solution as $step) {
+                if (is_array($step)) {
+                    $step = implode(': ', array_filter($step));
+                }
+
+                $body .= '- '.trim((string) $step)."\n";
+            }
+            $body .= "\n";
         }
 
         if ($todo->has_conflicts) {

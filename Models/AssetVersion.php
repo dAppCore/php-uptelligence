@@ -25,16 +25,27 @@ class AssetVersion extends Model
     protected $fillable = [
         'asset_id',
         'version',
-        'changelog',
+        'changelog_url',
         'breaking_changes',
         'download_url',
         'local_path',
+        'file_count',
+        'total_size',
+        'checksum',
+        'notes',
+        'storage_disk',
+        's3_key',
         'released_at',
+        'archived_at',
     ];
 
     protected $casts = [
         'breaking_changes' => 'array',
+        'notes' => 'array',
+        'file_count' => 'integer',
+        'total_size' => 'integer',
         'released_at' => 'datetime',
+        'archived_at' => 'datetime',
     ];
 
     public function asset(): BelongsTo
