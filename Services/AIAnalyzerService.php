@@ -4,14 +4,19 @@ declare(strict_types=1);
 
 namespace Core\Mod\Uptelligence\Services;
 
+use Core\Mod\Uptelligence\Data\AIAnalysis;
+use Core\Mod\Uptelligence\Data\DiffResult;
 use Core\Mod\Uptelligence\Models\AnalysisLog;
 use Core\Mod\Uptelligence\Models\DiffCache;
 use Core\Mod\Uptelligence\Models\UpstreamTodo;
 use Core\Mod\Uptelligence\Models\VersionRelease;
+use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\RateLimiter;
+use Throwable;
 
 /**
  * AI Analyzer Service - uses AI to analyse version releases and create todos.
@@ -37,9 +42,334 @@ class AIAnalyzerService
         $this->model = $config['model'] ?? 'claude-sonnet-4-20250514';
         $this->maxTokens = $config['max_tokens'] ?? 4096;
         $this->temperature = $config['temperature'] ?? 0.3;
-        $this->apiKey = $this->provider === 'anthropic'
-            ? config('services.anthropic.api_key')
-            : config('services.openai.api_key');
+        $this->apiKey = match ($this->provider) {
+            'anthropic' => (string) config('services.anthropic.api_key', ''),
+            'openai' => (string) config('services.openai.api_key', ''),
+            'lthn.ai', 'lthn_ai', 'lthn' => (string) (
+                config('services.lthn_ai.api_key')
+                ?? config('upstream.ai.lthn_ai.api_key')
+                ?? config('upstream.ai.api_key')
+                ?? ''
+            ),
+            default => (string) config('upstream.ai.api_key', ''),
+        };
+    }
+
+    /**
+     * Analyse a structured diff and return the RFC DTO.
+     */
+    public function analyze(DiffResult|array $diff): AIAnalysis
+    {
+        $diffResult = is_array($diff) ? DiffResult::fromArray($diff) : $diff;
+
+        $cached = $this->cachedAnalysis($diffResult);
+        if ($cached instanceof AIAnalysis) {
+            return $cached;
+        }
+
+        $response = $this->callAI($this->buildDiffAnalysisPrompt($diffResult));
+        $analysis = is_string($response)
+            ? $this->parseDiffAnalysisResponse($response, $diffResult)
+            : null;
+
+        if (! $analysis instanceof AIAnalysis) {
+            $analysis = $this->fallbackAnalysis($diffResult, $response === null ? 'AI provider unavailable' : 'AI response was not valid JSON');
+        }
+
+        $this->cacheAnalysis($diffResult, $analysis);
+
+        return $analysis;
+    }
+
+    public function analyse(DiffResult|array $diff): AIAnalysis
+    {
+        return $this->analyze($diff);
+    }
+
+    protected function cachedAnalysis(DiffResult $diff): ?AIAnalysis
+    {
+        try {
+            $cacheKey = $diff->cacheKey();
+            $cache = DiffCache::query()
+                ->where('metadata->analysis_cache_key', $cacheKey)
+                ->latest()
+                ->first();
+
+            if (! $cache instanceof DiffCache) {
+                $cacheIds = $this->diffCacheIds($diff);
+                $cache = $cacheIds === []
+                    ? null
+                    : DiffCache::query()->whereIn('id', $cacheIds)->get()
+                        ->first(fn (DiffCache $row): bool => $row->cachedAIAnalysis() !== null);
+            }
+
+            $analysis = $cache?->cachedAIAnalysis();
+
+            return is_array($analysis) ? AIAnalysis::fromArray($analysis, cached: true) : null;
+        } catch (Throwable $e) {
+            Log::debug('Uptelligence: unable to read AI analysis cache', [
+                'error' => $e->getMessage(),
+            ]);
+
+            return null;
+        }
+    }
+
+    protected function buildDiffAnalysisPrompt(DiffResult $diff): string
+    {
+        $files = collect($diff->byFile)
+            ->take(30)
+            ->map(function (array $file): string {
+                $diffContent = (string) ($file['diff_content'] ?? '');
+                $diffContent = strlen($diffContent) > 6000 ? substr($diffContent, 0, 6000)."\n[truncated]\n" : $diffContent;
+
+                return sprintf(
+                    "[%s] %s (%s)\n```diff\n%s\n```",
+                    $file['change_type'] ?? 'modified',
+                    $file['file_path'] ?? 'unknown',
+                    $file['category'] ?? 'other',
+                    $diffContent,
+                );
+            })
+            ->implode("\n\n");
+
+        $breaking = $diff->breakingChanges === []
+            ? 'None detected by the static diff pass.'
+            : implode("\n- ", $diff->breakingChanges);
+        $migrationSteps = $diff->migrationSteps === []
+            ? 'No generated migration steps.'
+            : implode("\n- ", $diff->migrationSteps);
+
+        return <<<PROMPT
+Analyse this upstream dependency diff for upgrade impact.
+
+Return JSON only with this exact shape:
+{
+  "severity": "low|medium|high|critical",
+  "summary": "One or two sentences.",
+  "actionItems": ["Concrete upgrade action"],
+  "riskLevel": "low|medium|high|critical",
+  "categories": ["breaking", "feature", "security", "performance", "docs", "styling"],
+  "findings": [{"kind": "breaking|feature|security|performance|docs|styling", "title": "Short finding", "description": "Why it matters"}]
+}
+
+Diff totals:
+- files_changed: {$diff->filesChanged}
+- additions: {$diff->additions}
+- deletions: {$diff->deletions}
+
+Static breaking-change hints:
+- {$breaking}
+
+Migration-step hints:
+- {$migrationSteps}
+
+Changed files:
+{$files}
+PROMPT;
+    }
+
+    protected function parseDiffAnalysisResponse(string $response, DiffResult $diff): ?AIAnalysis
+    {
+        $data = $this->decodeJsonResponse($response);
+        if (! is_array($data)) {
+            return null;
+        }
+
+        $payload = is_array($data['analysis'] ?? null) ? $data['analysis'] : $data;
+        $severity = $this->normaliseRiskValue($payload['severity'] ?? $payload['priority'] ?? null, $diff);
+        $riskLevel = $this->normaliseRiskValue($payload['riskLevel'] ?? $payload['risk_level'] ?? $severity, $diff);
+        $summary = trim((string) ($payload['summary'] ?? ''));
+
+        if ($summary === '') {
+            $summary = $this->fallbackSummary($diff);
+        }
+
+        return new AIAnalysis(
+            severity: $severity,
+            summary: $summary,
+            actionItems: $this->normaliseActionItems($payload['actionItems'] ?? $payload['action_items'] ?? []),
+            riskLevel: $riskLevel,
+            categories: $this->normaliseList($payload['categories'] ?? []),
+            findings: $this->normaliseFindings($payload['findings'] ?? []),
+            metadata: [
+                'provider' => $this->provider,
+                'model' => $this->model,
+                'diff_cache_key' => $diff->cacheKey(),
+            ],
+        );
+    }
+
+    protected function decodeJsonResponse(string $response): ?array
+    {
+        $json = trim($response);
+        if (preg_match('/```json\s*(.*?)\s*```/s', $json, $matches) === 1) {
+            $json = trim($matches[1]);
+        }
+
+        try {
+            $decoded = json_decode($json, true, 512, JSON_THROW_ON_ERROR);
+
+            return is_array($decoded) ? $decoded : null;
+        } catch (\JsonException) {
+            return null;
+        }
+    }
+
+    protected function fallbackAnalysis(DiffResult $diff, string $reason): AIAnalysis
+    {
+        $severity = $diff->breakingChanges === []
+            ? ($diff->filesChanged > 10 ? 'medium' : 'low')
+            : 'high';
+
+        if (collect($diff->breakingChanges)->contains(fn (string $change): bool => str_contains(strtolower($change), 'security'))) {
+            $severity = 'critical';
+        }
+
+        $actionItems = $diff->migrationSteps !== []
+            ? $diff->migrationSteps
+            : ['Review the changed files and run the relevant regression tests.'];
+
+        return new AIAnalysis(
+            severity: $severity,
+            summary: $this->fallbackSummary($diff),
+            actionItems: $actionItems,
+            riskLevel: $severity,
+            categories: $diff->breakingChanges === [] ? ['maintenance'] : ['breaking'],
+            findings: collect($diff->breakingChanges)
+                ->map(fn (string $change): array => [
+                    'kind' => 'breaking',
+                    'title' => $change,
+                    'description' => $change,
+                ])
+                ->values()
+                ->all(),
+            metadata: [
+                'provider' => 'heuristic',
+                'fallback_reason' => $reason,
+                'diff_cache_key' => $diff->cacheKey(),
+            ],
+        );
+    }
+
+    protected function fallbackSummary(DiffResult $diff): string
+    {
+        if ($diff->isEmpty()) {
+            return 'No meaningful code changes were detected after filtering noise files.';
+        }
+
+        return "Detected {$diff->filesChanged} changed file(s), {$diff->additions} addition(s), and {$diff->deletions} deletion(s).";
+    }
+
+    protected function normaliseRiskValue(mixed $value, DiffResult $diff): string
+    {
+        if (is_numeric($value)) {
+            return match (true) {
+                (int) $value >= 9 => 'critical',
+                (int) $value >= 7 => 'high',
+                (int) $value >= 4 => 'medium',
+                default => 'low',
+            };
+        }
+
+        $risk = strtolower((string) $value);
+
+        return in_array($risk, ['low', 'medium', 'high', 'critical'], true)
+            ? $risk
+            : ($diff->breakingChanges === [] ? 'medium' : 'high');
+    }
+
+    protected function normaliseActionItems(mixed $items): array
+    {
+        if (is_string($items)) {
+            return [$items];
+        }
+
+        if (! is_array($items)) {
+            return [];
+        }
+
+        return collect($items)
+            ->map(fn (mixed $item): string => is_array($item)
+                ? (string) ($item['title'] ?? $item['description'] ?? json_encode($item))
+                : (string) $item)
+            ->filter()
+            ->values()
+            ->all();
+    }
+
+    protected function normaliseList(mixed $items): array
+    {
+        if (is_string($items)) {
+            return [$items];
+        }
+
+        return is_array($items)
+            ? array_values(array_filter(array_map('strval', $items)))
+            : [];
+    }
+
+    protected function normaliseFindings(mixed $findings): array
+    {
+        if (! is_array($findings)) {
+            return [];
+        }
+
+        return collect($findings)
+            ->map(function (mixed $finding): array {
+                if (is_string($finding)) {
+                    return [
+                        'kind' => 'general',
+                        'title' => $finding,
+                        'description' => $finding,
+                    ];
+                }
+
+                return is_array($finding) ? $finding : [];
+            })
+            ->filter()
+            ->values()
+            ->all();
+    }
+
+    protected function cacheAnalysis(DiffResult $diff, AIAnalysis $analysis): void
+    {
+        try {
+            $cacheIds = $this->diffCacheIds($diff);
+            $rows = $cacheIds === []
+                ? collect()
+                : DiffCache::query()->whereIn('id', $cacheIds)->get();
+
+            if ($rows->isEmpty() && is_numeric($diff->metadata['version_release_id'] ?? null)) {
+                $rows = DiffCache::query()
+                    ->where('version_release_id', (int) $diff->metadata['version_release_id'])
+                    ->get();
+            }
+
+            foreach ($rows as $row) {
+                $row->cacheAIAnalysis($analysis, $diff->cacheKey());
+            }
+        } catch (Throwable $e) {
+            Log::debug('Uptelligence: unable to cache AI analysis', [
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    protected function diffCacheIds(DiffResult $diff): array
+    {
+        $metadataIds = $diff->metadata['diff_cache_ids'] ?? [];
+        $fileIds = collect($diff->byFile)
+            ->map(fn (array $file): mixed => $file['cache_id'] ?? $file['diff_cache_id'] ?? null)
+            ->filter()
+            ->all();
+
+        return collect([...((array) $metadataIds), ...$fileIds])
+            ->map(fn (mixed $id): int => (int) $id)
+            ->filter(fn (int $id): bool => $id > 0)
+            ->unique()
+            ->values()
+            ->all();
     }
 
     /**
@@ -233,9 +563,13 @@ PROMPT;
         try {
             if ($this->provider === 'anthropic') {
                 return $this->callAnthropic($prompt);
-            } else {
-                return $this->callOpenAI($prompt);
             }
+
+            if (in_array($this->provider, ['lthn.ai', 'lthn_ai', 'lthn'], true)) {
+                return $this->callLthnAi($prompt);
+            }
+
+            return $this->callOpenAI($prompt);
         } catch (\Exception $e) {
             Log::error('Uptelligence: AI API call failed', [
                 'provider' => $this->provider,
@@ -247,6 +581,68 @@ PROMPT;
 
             return null;
         }
+    }
+
+    /**
+     * Call lthn.ai direct API.
+     */
+    protected function callLthnAi(string $prompt): ?string
+    {
+        $endpoint = (string) (
+            config('upstream.ai.lthn_ai.endpoint')
+            ?? config('services.lthn_ai.endpoint')
+            ?? 'https://lthn.ai/api/llm/analyse'
+        );
+
+        $response = Http::withToken($this->apiKey)
+            ->acceptJson()
+            ->timeout(60)
+            ->retry(3, function (int $attempt, \Exception $exception) {
+                $delay = (int) pow(2, $attempt - 1) * 1000;
+
+                Log::warning('Uptelligence: lthn.ai API retry', [
+                    'attempt' => $attempt,
+                    'delay_ms' => $delay,
+                    'error' => $exception->getMessage(),
+                ]);
+
+                return $delay;
+            }, function (\Exception $exception) {
+                if ($exception instanceof ConnectionException) {
+                    return true;
+                }
+
+                if ($exception instanceof RequestException) {
+                    $status = $exception->response?->status();
+
+                    return $status >= 500 || $status === 429;
+                }
+
+                return false;
+            })
+            ->post($endpoint, [
+                'model' => $this->model,
+                'prompt' => $prompt,
+                'response_format' => ['type' => 'json_object'],
+                'temperature' => $this->temperature,
+                'max_tokens' => $this->maxTokens,
+            ]);
+
+        if ($response->successful()) {
+            $content = $response->json('analysis')
+                ?? $response->json('content')
+                ?? $response->json('message')
+                ?? $response->body();
+
+            return is_string($content) ? $content : json_encode($content, JSON_THROW_ON_ERROR);
+        }
+
+        Log::error('Uptelligence: lthn.ai API request failed', [
+            'status' => $response->status(),
+            'body' => $this->redactSensitiveData(substr($response->body(), 0, 500)),
+        ]);
+
+        return null;
     }
 
     /**
@@ -273,10 +669,10 @@ PROMPT;
                 return $delay;
             }, function (\Exception $exception) {
                 // Only retry on connection/timeout errors or 5xx responses
-                if ($exception instanceof \Illuminate\Http\Client\ConnectionException) {
+                if ($exception instanceof ConnectionException) {
                     return true;
                 }
-                if ($exception instanceof \Illuminate\Http\Client\RequestException) {
+                if ($exception instanceof RequestException) {
                     $status = $exception->response?->status();
 
                     return $status >= 500 || $status === 429;
@@ -328,10 +724,10 @@ PROMPT;
                 return $delay;
             }, function (\Exception $exception) {
                 // Only retry on connection/timeout errors or 5xx responses
-                if ($exception instanceof \Illuminate\Http\Client\ConnectionException) {
+                if ($exception instanceof ConnectionException) {
                     return true;
                 }
-                if ($exception instanceof \Illuminate\Http\Client\RequestException) {
+                if ($exception instanceof RequestException) {
                     $status = $exception->response?->status();
 
                     return $status >= 500 || $status === 429;
