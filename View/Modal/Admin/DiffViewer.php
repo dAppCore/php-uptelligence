@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Core\Mod\Uptelligence\View\Modal\Admin;
 
+use Core\Mod\Uptelligence\Models\Asset;
 use Core\Mod\Uptelligence\Models\DiffCache;
 use Core\Mod\Uptelligence\Models\Vendor;
 use Core\Mod\Uptelligence\Models\VersionRelease;
@@ -35,9 +36,14 @@ class DiffViewer extends Component
 
     public bool $showDiffModal = false;
 
-    public function mount(): void
+    public function mount(mixed $asset = null): void
     {
         $this->checkHadesAccess();
+
+        if (is_numeric($asset)) {
+            $assetModel = Asset::find((int) $asset);
+            $this->vendorId = $assetModel?->vendor_id;
+        }
     }
 
     #[Computed]

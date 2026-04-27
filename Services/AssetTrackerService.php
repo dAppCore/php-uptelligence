@@ -7,6 +7,7 @@ namespace Core\Mod\Uptelligence\Services;
 use Carbon\Carbon;
 use Core\Mod\Uptelligence\Models\Asset;
 use Core\Mod\Uptelligence\Models\AssetVersion;
+use Core\Mod\Uptelligence\Models\AnalysisLog;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Process;
@@ -89,6 +90,50 @@ class AssetTrackerService
         $asset->update(['last_checked_at' => now()]);
 
         return $result;
+    }
+
+    public function updateInstalledVersion(Asset $asset, string $newVersion): void
+    {
+        $asset->update(['installed_version' => $newVersion]);
+    }
+
+    public function getUpdateStatus(Asset $asset): string
+    {
+        if (! $asset->installed_version || ! $asset->latest_version || version_compare($asset->latest_version, $asset->installed_version, '<=')) {
+            return 'current';
+        }
+
+        [$installedMajor, $installedMinor] = $this->majorMinor($asset->installed_version);
+        [$latestMajor, $latestMinor] = $this->majorMinor($asset->latest_version);
+
+        if ($latestMajor > $installedMajor) {
+            return 'major';
+        }
+
+        if ($latestMinor > $installedMinor) {
+            return 'minor';
+        }
+
+        return 'patch';
+    }
+
+    public function isBreakingChange(string $fromVersion, string $toVersion): bool
+    {
+        return AnalysisLog::query()
+            ->where('from_version', $fromVersion)
+            ->where('to_version', $toVersion)
+            ->whereJsonContains('categories', 'breaking')
+            ->exists();
+    }
+
+    /**
+     * @return array{0: int, 1: int}
+     */
+    private function majorMinor(string $version): array
+    {
+        $parts = array_map('intval', explode('.', preg_replace('/[^0-9.].*/', '', $version) ?: '0.0'));
+
+        return [$parts[0] ?? 0, $parts[1] ?? 0];
     }
 
     /**
@@ -366,7 +411,11 @@ class AssetTrackerService
                 'version' => $version,
             ],
             [
-                'changelog' => $data['description'] ?? null,
+                'changelog_url' => $data['support']['source'] ?? $data['homepage'] ?? null,
+                'notes' => array_filter([
+                    'description' => $data['description'] ?? null,
+                    'keywords' => $data['keywords'] ?? null,
+                ]),
                 'download_url' => $data['dist']['url'] ?? null,
                 'released_at' => $releasedAt,
             ]

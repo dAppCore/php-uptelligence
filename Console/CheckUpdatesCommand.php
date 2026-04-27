@@ -16,11 +16,13 @@ use Illuminate\Console\Command;
  */
 class CheckUpdatesCommand extends Command
 {
-    protected $signature = 'uptelligence:check-updates
+    protected $signature = 'upstream:check-updates
                             {--vendor= : Specific vendor slug to check}
                             {--assets : Also check package assets for updates}
                             {--no-todos : Do not create todos for updates found}
                             {--json : Output results as JSON}';
+
+    protected $aliases = ['uptelligence:check-updates'];
 
     protected $description = 'Check vendors and assets for upstream updates';
 

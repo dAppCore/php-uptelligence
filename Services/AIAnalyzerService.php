@@ -4,14 +4,23 @@ declare(strict_types=1);
 
 namespace Core\Mod\Uptelligence\Services;
 
+use Core\Mod\Uptelligence\Data\AIAnalysis;
+use Core\Mod\Uptelligence\Data\DiffResult;
 use Core\Mod\Uptelligence\Models\AnalysisLog;
+use Core\Mod\Uptelligence\Models\Asset;
 use Core\Mod\Uptelligence\Models\DiffCache;
+use Core\Mod\Uptelligence\Models\Pattern;
+use Core\Mod\Uptelligence\Models\PatternVariant;
 use Core\Mod\Uptelligence\Models\UpstreamTodo;
 use Core\Mod\Uptelligence\Models\VersionRelease;
+use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\Str;
+use Throwable;
 
 /**
  * AI Analyzer Service - uses AI to analyse version releases and create todos.
@@ -34,12 +43,594 @@ class AIAnalyzerService
     {
         $config = config('upstream.ai');
         $this->provider = $config['provider'] ?? 'anthropic';
-        $this->model = $config['model'] ?? 'claude-sonnet-4-20250514';
+        $this->model = (string) config('uptelligence.analysis.ai_model', $config['model'] ?? 'claude-opus-4-7');
         $this->maxTokens = $config['max_tokens'] ?? 4096;
         $this->temperature = $config['temperature'] ?? 0.3;
-        $this->apiKey = $this->provider === 'anthropic'
-            ? config('services.anthropic.api_key')
-            : config('services.openai.api_key');
+        $this->apiKey = match ($this->provider) {
+            'anthropic' => (string) config('services.anthropic.api_key', ''),
+            'openai' => (string) config('services.openai.api_key', ''),
+            'lthn.ai', 'lthn_ai', 'lthn' => (string) (
+                config('services.lthn_ai.api_key')
+                ?? config('upstream.ai.lthn_ai.api_key')
+                ?? config('upstream.ai.api_key')
+                ?? ''
+            ),
+            default => (string) config('upstream.ai.api_key', ''),
+        };
+    }
+
+    /**
+     * Analyse a structured diff and return the RFC DTO.
+     */
+    public function analyze(DiffResult|array $diff): AIAnalysis
+    {
+        $diffResult = is_array($diff) ? DiffResult::fromArray($diff) : $diff;
+
+        $cached = $this->cachedAnalysis($diffResult);
+        if ($cached instanceof AIAnalysis) {
+            return $cached;
+        }
+
+        $response = $this->callAI($this->buildDiffAnalysisPrompt($diffResult));
+        $analysis = is_string($response)
+            ? $this->parseDiffAnalysisResponse($response, $diffResult)
+            : null;
+
+        if (! $analysis instanceof AIAnalysis) {
+            $analysis = $this->fallbackAnalysis($diffResult, $response === null ? 'AI provider unavailable' : 'AI response was not valid JSON');
+        }
+
+        $this->cacheAnalysis($diffResult, $analysis);
+
+        return $analysis;
+    }
+
+    public function analyse(DiffResult|array $diff): AIAnalysis
+    {
+        return $this->analyze($diff);
+    }
+
+    public function analyseDiff(Asset $asset, string $fromVersion, string $toVersion): AnalysisLog
+    {
+        $diff = app(DiffAnalyzerService::class)->generateDiff($asset, $fromVersion, $toVersion);
+        $analysis = $this->analyze($diff);
+
+        $log = AnalysisLog::create([
+            'vendor_id' => $asset->vendor_id,
+            'asset_id' => $asset->id,
+            'asset_version_id' => $asset->versions()->where('version', $toVersion)->value('id'),
+            'action' => AnalysisLog::ACTION_ANALYSIS_COMPLETED,
+            'context' => [
+                'diff' => $diff->toArray(),
+                'analysis' => $analysis->toArray(),
+            ],
+            'from_version' => $fromVersion,
+            'to_version' => $toVersion,
+            'ai_model' => $this->model,
+            'categories' => $analysis->categories,
+            'summary' => $analysis->summary,
+            'findings' => $analysis->findings,
+            'analyzed_at' => now(),
+        ]);
+
+        $this->detectPatterns($log);
+        $this->createTodosFromFindings($asset, $log, $analysis, $fromVersion, $toVersion);
+
+        return $log;
+    }
+
+    public function analyzeDiff(Asset $asset, string $fromVersion, string $toVersion): AnalysisLog
+    {
+        return $this->analyseDiff($asset, $fromVersion, $toVersion);
+    }
+
+    public function detectPatterns(AnalysisLog $analysis): void
+    {
+        $findings = collect($analysis->findings ?? []);
+
+        if ($findings->isEmpty()) {
+            return;
+        }
+
+        try {
+            Pattern::query()
+                ->where('is_active', true)
+                ->get()
+                ->each(function (Pattern $pattern) use ($analysis, $findings): void {
+                    $rule = $pattern->detection_rule ?? [];
+
+                    $findings->each(function (mixed $finding) use ($pattern, $rule, $analysis): void {
+                        $finding = is_array($finding) ? $finding : [
+                            'title' => (string) $finding,
+                            'description' => (string) $finding,
+                        ];
+
+                        if (! $this->matchesPatternRule($finding, $rule)) {
+                            return;
+                        }
+
+                        PatternVariant::create([
+                            'pattern_id' => $pattern->id,
+                            'asset_id' => $analysis->asset_id,
+                            'from_version' => $analysis->from_version,
+                            'to_version' => $analysis->to_version,
+                            'file_path' => data_get($finding, 'file_path') ?? data_get($finding, 'files.0'),
+                            'line_range' => data_get($finding, 'line_range'),
+                            'context' => data_get($finding, 'description') ?? data_get($finding, 'title'),
+                            'found_at' => now(),
+                        ]);
+                    });
+                });
+        } catch (Throwable $e) {
+            Log::debug('Uptelligence: pattern detection skipped', [
+                'analysis_log_id' => $analysis->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    protected function matchesPatternRule(array $finding, array $rule): bool
+    {
+        $text = Str::lower(implode(' ', array_filter([
+            data_get($finding, 'kind'),
+            data_get($finding, 'category'),
+            data_get($finding, 'type'),
+            data_get($finding, 'title'),
+            data_get($finding, 'description'),
+            implode(' ', (array) data_get($finding, 'files', [])),
+        ])));
+
+        $match = $rule['match'] ?? $rule['regex'] ?? null;
+        if (is_string($match) && $match !== '') {
+            $pattern = str_starts_with($match, '/') ? $match : '/'.str_replace('/', '\/', $match).'/i';
+
+            return @preg_match($pattern, $text) === 1;
+        }
+
+        $contains = $rule['contains'] ?? $rule['context'] ?? null;
+        if (is_string($contains) && $contains !== '') {
+            return str_contains($text, Str::lower($contains));
+        }
+
+        return false;
+    }
+
+    protected function createTodosFromFindings(
+        Asset $asset,
+        AnalysisLog $log,
+        AIAnalysis $analysis,
+        string $fromVersion,
+        string $toVersion
+    ): void {
+        $findings = $analysis->findings;
+
+        if ($findings === [] && $analysis->actionItems !== []) {
+            $findings = collect($analysis->actionItems)
+                ->map(fn (string $item): array => [
+                    'kind' => $analysis->categories[0] ?? 'feature',
+                    'title' => $item,
+                    'description' => $item,
+                ])
+                ->all();
+        }
+
+        foreach ($findings as $finding) {
+            if (! is_array($finding)) {
+                $finding = [
+                    'kind' => 'feature',
+                    'title' => (string) $finding,
+                    'description' => (string) $finding,
+                ];
+            }
+
+            UpstreamTodo::create([
+                'workspace_id' => $asset->vendor?->workspace_id,
+                'vendor_id' => $asset->vendor_id,
+                'asset_id' => $asset->id,
+                'analysis_log_id' => $log->id,
+                'from_version' => $fromVersion,
+                'to_version' => $toVersion,
+                'type' => $this->todoTypeFromFinding($finding),
+                'status' => UpstreamTodo::STATUS_PENDING,
+                'title' => $this->todoTitleFromFinding($asset, $finding),
+                'description' => $this->todoDescriptionFromFinding($finding, $analysis),
+                'priority' => $this->numericPriorityFromFinding($finding),
+                'priority_label' => $this->priorityLabelFromFinding($finding),
+                'effort' => $this->effortLabelFromFinding($finding),
+                'estimated_effort_hours' => $this->estimatedHoursFromFinding($finding),
+                'files' => (array) data_get($finding, 'files', []),
+                'tags' => array_values(array_filter([
+                    'uptelligence',
+                    $this->todoTypeFromFinding($finding),
+                    $this->priorityLabelFromFinding($finding),
+                ])),
+                'ai_analysis' => $finding,
+                'suggested_solution' => $this->suggestedSolutionFromFinding($finding),
+                'ai_confidence' => data_get($finding, 'confidence', 0.85),
+            ]);
+        }
+    }
+
+    protected function todoTitleFromFinding(Asset $asset, array $finding): string
+    {
+        $title = trim((string) (data_get($finding, 'title') ?? data_get($finding, 'summary') ?? ''));
+
+        return $title !== '' ? $title : "Review {$asset->name} upstream change";
+    }
+
+    protected function todoDescriptionFromFinding(array $finding, AIAnalysis $analysis): string
+    {
+        $description = trim((string) (data_get($finding, 'description') ?? data_get($finding, 'details') ?? ''));
+
+        return $description !== '' ? $description : $analysis->summary;
+    }
+
+    protected function todoTypeFromFinding(array $finding): string
+    {
+        $kind = Str::lower((string) (data_get($finding, 'kind') ?? data_get($finding, 'category') ?? data_get($finding, 'type') ?? 'feature'));
+
+        return match (true) {
+            str_contains($kind, 'security') => UpstreamTodo::TYPE_SECURITY,
+            str_contains($kind, 'breaking'), str_contains($kind, 'api') => UpstreamTodo::TYPE_API,
+            str_contains($kind, 'bug'), str_contains($kind, 'fix') => UpstreamTodo::TYPE_BUGFIX,
+            str_contains($kind, 'dependency') => UpstreamTodo::TYPE_DEPENDENCY,
+            str_contains($kind, 'refactor') => UpstreamTodo::TYPE_REFACTOR,
+            str_contains($kind, 'ui'), str_contains($kind, 'style') => UpstreamTodo::TYPE_UI,
+            default => UpstreamTodo::TYPE_FEATURE,
+        };
+    }
+
+    protected function priorityLabelFromFinding(array $finding): string
+    {
+        $kind = Str::lower((string) (data_get($finding, 'kind') ?? data_get($finding, 'category') ?? data_get($finding, 'type') ?? ''));
+        $priority = Str::lower((string) (data_get($finding, 'priority') ?? data_get($finding, 'severity') ?? ''));
+
+        return match (true) {
+            str_contains($kind, 'security'), str_contains($priority, 'critical') => 'critical',
+            str_contains($kind, 'breaking'), str_contains($priority, 'high') => 'high',
+            str_contains($priority, 'medium'), str_contains($kind, 'feature') => 'medium',
+            default => 'low',
+        };
+    }
+
+    protected function numericPriorityFromFinding(array $finding): int
+    {
+        $priority = data_get($finding, 'priority');
+        if (is_numeric($priority)) {
+            return max(1, min(10, (int) $priority));
+        }
+
+        return match ($this->priorityLabelFromFinding($finding)) {
+            'critical' => 9,
+            'high' => 7,
+            'medium' => 5,
+            default => 3,
+        };
+    }
+
+    protected function effortLabelFromFinding(array $finding): string
+    {
+        $effort = Str::lower((string) data_get($finding, 'effort', ''));
+
+        return match (true) {
+            str_contains($effort, 'low'), str_contains($effort, 'small') => UpstreamTodo::EFFORT_LOW,
+            str_contains($effort, 'high'), str_contains($effort, 'large') => UpstreamTodo::EFFORT_HIGH,
+            default => UpstreamTodo::EFFORT_MEDIUM,
+        };
+    }
+
+    protected function estimatedHoursFromFinding(array $finding): int
+    {
+        $hours = data_get($finding, 'estimated_effort_hours') ?? data_get($finding, 'effort_hours');
+
+        if (is_numeric($hours)) {
+            return max(1, (int) $hours);
+        }
+
+        return match ($this->effortLabelFromFinding($finding)) {
+            UpstreamTodo::EFFORT_LOW => 1,
+            UpstreamTodo::EFFORT_HIGH => 8,
+            default => 4,
+        };
+    }
+
+    protected function suggestedSolutionFromFinding(array $finding): array
+    {
+        $solution = data_get($finding, 'suggested_solution') ?? data_get($finding, 'solution') ?? data_get($finding, 'steps') ?? [];
+
+        if (is_array($solution)) {
+            return $solution;
+        }
+
+        $solution = trim((string) $solution);
+
+        return $solution === '' ? [] : ['steps' => [$solution]];
+    }
+
+    protected function cachedAnalysis(DiffResult $diff): ?AIAnalysis
+    {
+        try {
+            $cacheKey = $diff->cacheKey();
+            $cache = DiffCache::query()
+                ->where('metadata->analysis_cache_key', $cacheKey)
+                ->latest()
+                ->first();
+
+            if (! $cache instanceof DiffCache) {
+                $cacheIds = $this->diffCacheIds($diff);
+                $cache = $cacheIds === []
+                    ? null
+                    : DiffCache::query()->whereIn('id', $cacheIds)->get()
+                        ->first(fn (DiffCache $row): bool => $row->cachedAIAnalysis() !== null);
+            }
+
+            $analysis = $cache?->cachedAIAnalysis();
+
+            return is_array($analysis) ? AIAnalysis::fromArray($analysis, cached: true) : null;
+        } catch (Throwable $e) {
+            Log::debug('Uptelligence: unable to read AI analysis cache', [
+                'error' => $e->getMessage(),
+            ]);
+
+            return null;
+        }
+    }
+
+    protected function buildDiffAnalysisPrompt(DiffResult $diff): string
+    {
+        $files = collect($diff->byFile)
+            ->take(30)
+            ->map(function (array $file): string {
+                $diffContent = (string) ($file['diff_content'] ?? '');
+                $diffContent = strlen($diffContent) > 6000 ? substr($diffContent, 0, 6000)."\n[truncated]\n" : $diffContent;
+
+                return sprintf(
+                    "[%s] %s (%s)\n```diff\n%s\n```",
+                    $file['change_type'] ?? 'modified',
+                    $file['file_path'] ?? 'unknown',
+                    $file['category'] ?? 'other',
+                    $diffContent,
+                );
+            })
+            ->implode("\n\n");
+
+        $breaking = $diff->breakingChanges === []
+            ? 'None detected by the static diff pass.'
+            : implode("\n- ", $diff->breakingChanges);
+        $migrationSteps = $diff->migrationSteps === []
+            ? 'No generated migration steps.'
+            : implode("\n- ", $diff->migrationSteps);
+
+        return <<<PROMPT
+Analyse this upstream dependency diff for upgrade impact.
+
+Return JSON only with this exact shape:
+{
+  "severity": "low|medium|high|critical",
+  "summary": "One or two sentences.",
+  "actionItems": ["Concrete upgrade action"],
+  "riskLevel": "low|medium|high|critical",
+  "categories": ["breaking", "feature", "security", "performance", "docs", "styling"],
+  "findings": [{"kind": "breaking|feature|security|performance|docs|styling", "title": "Short finding", "description": "Why it matters"}]
+}
+
+Diff totals:
+- files_changed: {$diff->filesChanged}
+- additions: {$diff->additions}
+- deletions: {$diff->deletions}
+
+Static breaking-change hints:
+- {$breaking}
+
+Migration-step hints:
+- {$migrationSteps}
+
+Changed files:
+{$files}
+PROMPT;
+    }
+
+    protected function parseDiffAnalysisResponse(string $response, DiffResult $diff): ?AIAnalysis
+    {
+        $data = $this->decodeJsonResponse($response);
+        if (! is_array($data)) {
+            return null;
+        }
+
+        $payload = is_array($data['analysis'] ?? null) ? $data['analysis'] : $data;
+        $severity = $this->normaliseRiskValue($payload['severity'] ?? $payload['priority'] ?? null, $diff);
+        $riskLevel = $this->normaliseRiskValue($payload['riskLevel'] ?? $payload['risk_level'] ?? $severity, $diff);
+        $summary = trim((string) ($payload['summary'] ?? ''));
+
+        if ($summary === '') {
+            $summary = $this->fallbackSummary($diff);
+        }
+
+        return new AIAnalysis(
+            severity: $severity,
+            summary: $summary,
+            actionItems: $this->normaliseActionItems($payload['actionItems'] ?? $payload['action_items'] ?? []),
+            riskLevel: $riskLevel,
+            categories: $this->normaliseList($payload['categories'] ?? []),
+            findings: $this->normaliseFindings($payload['findings'] ?? []),
+            metadata: [
+                'provider' => $this->provider,
+                'model' => $this->model,
+                'diff_cache_key' => $diff->cacheKey(),
+            ],
+        );
+    }
+
+    protected function decodeJsonResponse(string $response): ?array
+    {
+        $json = trim($response);
+        if (preg_match('/```json\s*(.*?)\s*```/s', $json, $matches) === 1) {
+            $json = trim($matches[1]);
+        }
+
+        try {
+            $decoded = json_decode($json, true, 512, JSON_THROW_ON_ERROR);
+
+            return is_array($decoded) ? $decoded : null;
+        } catch (\JsonException) {
+            return null;
+        }
+    }
+
+    protected function fallbackAnalysis(DiffResult $diff, string $reason): AIAnalysis
+    {
+        $severity = $diff->breakingChanges === []
+            ? ($diff->filesChanged > 10 ? 'medium' : 'low')
+            : 'high';
+
+        if (collect($diff->breakingChanges)->contains(fn (string $change): bool => str_contains(strtolower($change), 'security'))) {
+            $severity = 'critical';
+        }
+
+        $actionItems = $diff->migrationSteps !== []
+            ? $diff->migrationSteps
+            : ['Review the changed files and run the relevant regression tests.'];
+
+        return new AIAnalysis(
+            severity: $severity,
+            summary: $this->fallbackSummary($diff),
+            actionItems: $actionItems,
+            riskLevel: $severity,
+            categories: $diff->breakingChanges === [] ? ['maintenance'] : ['breaking'],
+            findings: collect($diff->breakingChanges)
+                ->map(fn (string $change): array => [
+                    'kind' => 'breaking',
+                    'title' => $change,
+                    'description' => $change,
+                ])
+                ->values()
+                ->all(),
+            metadata: [
+                'provider' => 'heuristic',
+                'fallback_reason' => $reason,
+                'diff_cache_key' => $diff->cacheKey(),
+            ],
+        );
+    }
+
+    protected function fallbackSummary(DiffResult $diff): string
+    {
+        if ($diff->isEmpty()) {
+            return 'No meaningful code changes were detected after filtering noise files.';
+        }
+
+        return "Detected {$diff->filesChanged} changed file(s), {$diff->additions} addition(s), and {$diff->deletions} deletion(s).";
+    }
+
+    protected function normaliseRiskValue(mixed $value, DiffResult $diff): string
+    {
+        if (is_numeric($value)) {
+            return match (true) {
+                (int) $value >= 9 => 'critical',
+                (int) $value >= 7 => 'high',
+                (int) $value >= 4 => 'medium',
+                default => 'low',
+            };
+        }
+
+        $risk = strtolower((string) $value);
+
+        return in_array($risk, ['low', 'medium', 'high', 'critical'], true)
+            ? $risk
+            : ($diff->breakingChanges === [] ? 'medium' : 'high');
+    }
+
+    protected function normaliseActionItems(mixed $items): array
+    {
+        if (is_string($items)) {
+            return [$items];
+        }
+
+        if (! is_array($items)) {
+            return [];
+        }
+
+        return collect($items)
+            ->map(fn (mixed $item): string => is_array($item)
+                ? (string) ($item['title'] ?? $item['description'] ?? json_encode($item))
+                : (string) $item)
+            ->filter()
+            ->values()
+            ->all();
+    }
+
+    protected function normaliseList(mixed $items): array
+    {
+        if (is_string($items)) {
+            return [$items];
+        }
+
+        return is_array($items)
+            ? array_values(array_filter(array_map('strval', $items)))
+            : [];
+    }
+
+    protected function normaliseFindings(mixed $findings): array
+    {
+        if (! is_array($findings)) {
+            return [];
+        }
+
+        return collect($findings)
+            ->map(function (mixed $finding): array {
+                if (is_string($finding)) {
+                    return [
+                        'kind' => 'general',
+                        'title' => $finding,
+                        'description' => $finding,
+                    ];
+                }
+
+                return is_array($finding) ? $finding : [];
+            })
+            ->filter()
+            ->values()
+            ->all();
+    }
+
+    protected function cacheAnalysis(DiffResult $diff, AIAnalysis $analysis): void
+    {
+        try {
+            $cacheIds = $this->diffCacheIds($diff);
+            $rows = $cacheIds === []
+                ? collect()
+                : DiffCache::query()->whereIn('id', $cacheIds)->get();
+
+            if ($rows->isEmpty() && is_numeric($diff->metadata['version_release_id'] ?? null)) {
+                $rows = DiffCache::query()
+                    ->where('version_release_id', (int) $diff->metadata['version_release_id'])
+                    ->get();
+            }
+
+            foreach ($rows as $row) {
+                $row->cacheAIAnalysis($analysis, $diff->cacheKey());
+            }
+        } catch (Throwable $e) {
+            Log::debug('Uptelligence: unable to cache AI analysis', [
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    protected function diffCacheIds(DiffResult $diff): array
+    {
+        $metadataIds = $diff->metadata['diff_cache_ids'] ?? [];
+        $fileIds = collect($diff->byFile)
+            ->map(fn (array $file): mixed => $file['cache_id'] ?? $file['diff_cache_id'] ?? null)
+            ->filter()
+            ->all();
+
+        return collect([...((array) $metadataIds), ...$fileIds])
+            ->map(fn (mixed $id): int => (int) $id)
+            ->filter(fn (int $id): bool => $id > 0)
+            ->unique()
+            ->values()
+            ->all();
     }
 
     /**
@@ -233,9 +824,13 @@ PROMPT;
         try {
             if ($this->provider === 'anthropic') {
                 return $this->callAnthropic($prompt);
-            } else {
-                return $this->callOpenAI($prompt);
             }
+
+            if (in_array($this->provider, ['lthn.ai', 'lthn_ai', 'lthn'], true)) {
+                return $this->callLthnAi($prompt);
+            }
+
+            return $this->callOpenAI($prompt);
         } catch (\Exception $e) {
             Log::error('Uptelligence: AI API call failed', [
                 'provider' => $this->provider,
@@ -247,6 +842,68 @@ PROMPT;
 
             return null;
         }
+    }
+
+    /**
+     * Call lthn.ai direct API.
+     */
+    protected function callLthnAi(string $prompt): ?string
+    {
+        $endpoint = (string) (
+            config('upstream.ai.lthn_ai.endpoint')
+            ?? config('services.lthn_ai.endpoint')
+            ?? 'https://lthn.ai/api/llm/analyse'
+        );
+
+        $response = Http::withToken($this->apiKey)
+            ->acceptJson()
+            ->timeout(60)
+            ->retry(3, function (int $attempt, \Exception $exception) {
+                $delay = (int) pow(2, $attempt - 1) * 1000;
+
+                Log::warning('Uptelligence: lthn.ai API retry', [
+                    'attempt' => $attempt,
+                    'delay_ms' => $delay,
+                    'error' => $exception->getMessage(),
+                ]);
+
+                return $delay;
+            }, function (\Exception $exception) {
+                if ($exception instanceof ConnectionException) {
+                    return true;
+                }
+
+                if ($exception instanceof RequestException) {
+                    $status = $exception->response?->status();
+
+                    return $status >= 500 || $status === 429;
+                }
+
+                return false;
+            })
+            ->post($endpoint, [
+                'model' => $this->model,
+                'prompt' => $prompt,
+                'response_format' => ['type' => 'json_object'],
+                'temperature' => $this->temperature,
+                'max_tokens' => $this->maxTokens,
+            ]);
+
+        if ($response->successful()) {
+            $content = $response->json('analysis')
+                ?? $response->json('content')
+                ?? $response->json('message')
+                ?? $response->body();
+
+            return is_string($content) ? $content : json_encode($content, JSON_THROW_ON_ERROR);
+        }
+
+        Log::error('Uptelligence: lthn.ai API request failed', [
+            'status' => $response->status(),
+            'body' => $this->redactSensitiveData(substr($response->body(), 0, 500)),
+        ]);
+
+        return null;
     }
 
     /**
@@ -273,10 +930,10 @@ PROMPT;
                 return $delay;
             }, function (\Exception $exception) {
                 // Only retry on connection/timeout errors or 5xx responses
-                if ($exception instanceof \Illuminate\Http\Client\ConnectionException) {
+                if ($exception instanceof ConnectionException) {
                     return true;
                 }
-                if ($exception instanceof \Illuminate\Http\Client\RequestException) {
+                if ($exception instanceof RequestException) {
                     $status = $exception->response?->status();
 
                     return $status >= 500 || $status === 429;
@@ -328,10 +985,10 @@ PROMPT;
                 return $delay;
             }, function (\Exception $exception) {
                 // Only retry on connection/timeout errors or 5xx responses
-                if ($exception instanceof \Illuminate\Http\Client\ConnectionException) {
+                if ($exception instanceof ConnectionException) {
                     return true;
                 }
-                if ($exception instanceof \Illuminate\Http\Client\RequestException) {
+                if ($exception instanceof RequestException) {
                     $status = $exception->response?->status();
 
                     return $status >= 500 || $status === 429;

@@ -4,9 +4,14 @@ declare(strict_types=1);
 
 namespace Core\Mod\Uptelligence\Services;
 
+use Core\Mod\Uptelligence\Jobs\UploadVendorVersionToS3;
+use Core\Mod\Uptelligence\Models\Asset;
+use Core\Mod\Uptelligence\Models\AssetVersion;
 use Core\Mod\Uptelligence\Models\Vendor;
 use Core\Mod\Uptelligence\Models\VersionRelease;
 use Illuminate\Contracts\Filesystem\Filesystem;
+use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -79,6 +84,72 @@ class VendorStorageService
         return "{$this->prefix}{$vendor->slug}/{$version}.tar.gz";
     }
 
+    public function getAssetVersionLocalPath(AssetVersion $assetVersion): string
+    {
+        $asset = $assetVersion->asset;
+        $slug = $asset?->slug ?? 'asset-'.$assetVersion->asset_id;
+
+        return storage_path("app/vendors/{$slug}/{$assetVersion->version}.zip");
+    }
+
+    public function getAssetVersionS3Key(AssetVersion $assetVersion): string
+    {
+        $asset = $assetVersion->asset;
+        $slug = $asset?->slug ?? 'asset-'.$assetVersion->asset_id;
+
+        return "{$this->prefix}{$slug}/{$assetVersion->version}.zip";
+    }
+
+    /**
+     * Download an asset version locally and queue cold archival when enabled.
+     *
+     * @return array{stored_at: string, size: int, checksum: string}
+     */
+    public function downloadVersion(AssetVersion $assetVersion): array
+    {
+        if (empty($assetVersion->download_url)) {
+            throw new RuntimeException("No download URL configured for asset version {$assetVersion->version}");
+        }
+
+        $response = Http::timeout((int) config('upstream.storage.download.timeout', 300))
+            ->retry(3, 500)
+            ->get($assetVersion->download_url);
+
+        if (! $response->successful()) {
+            throw new RuntimeException("Failed to download asset version {$assetVersion->version}: HTTP {$response->status()}");
+        }
+
+        $contents = $response->body();
+        $checksum = hash('sha256', $contents);
+
+        if (! empty($assetVersion->checksum) && ! hash_equals((string) $assetVersion->checksum, $checksum)) {
+            throw new RuntimeException("Checksum mismatch for asset version {$assetVersion->version}");
+        }
+
+        $localPath = $this->getAssetVersionLocalPath($assetVersion);
+        $relativePath = $this->relativeStoragePath($localPath);
+
+        $this->local()->makeDirectory(dirname($relativePath));
+        $this->local()->put($relativePath, $contents);
+
+        $assetVersion->update([
+            'local_path' => $localPath,
+            'checksum' => $checksum,
+            'total_size' => strlen($contents),
+            'storage_disk' => 'local',
+        ]);
+
+        if ($this->isS3Enabled() && (bool) config('upstream.storage.archive.auto_archive', true)) {
+            UploadVendorVersionToS3::dispatch(AssetVersion::class, $assetVersion->getKey());
+        }
+
+        return [
+            'stored_at' => $localPath,
+            'size' => strlen($contents),
+            'checksum' => $checksum,
+        ];
+    }
+
     /**
      * Get temp directory for processing.
      */
@@ -135,9 +206,25 @@ class VendorStorageService
     }
 
     /**
-     * Archive a version to S3 cold storage.
+     * Queue a version for S3 cold storage.
      */
     public function archiveToS3(VersionRelease $release): bool
+    {
+        if (! $this->isS3Enabled()) {
+            return false;
+        }
+
+        UploadVendorVersionToS3::dispatch(VersionRelease::class, $release->getKey());
+
+        return true;
+    }
+
+    /**
+     * Archive a version to S3 cold storage immediately.
+     *
+     * Intended for the queued upload job; callers should use archiveToS3().
+     */
+    public function archiveToS3Synchronously(VersionRelease $release): bool
     {
         if (! $this->isS3Enabled()) {
             return false;
@@ -191,6 +278,15 @@ class VendorStorageService
         return str_starts_with($absolutePath, $storagePath)
             ? substr($absolutePath, strlen($storagePath))
             : $absolutePath;
+    }
+
+    protected function relativeStoragePath(string $absolutePath): string
+    {
+        $storagePath = storage_path('app/');
+
+        return str_starts_with($absolutePath, $storagePath)
+            ? substr($absolutePath, strlen($storagePath))
+            : ltrim($absolutePath, '/');
     }
 
     /**
@@ -335,6 +431,30 @@ class VendorStorageService
             Log::error('Uptelligence: Failed to upload to S3', ['s3_key' => $s3Key]);
             throw new RuntimeException("Failed to upload to S3: {$s3Key}");
         }
+    }
+
+    public function uploadAssetVersionToS3Synchronously(AssetVersion $assetVersion): bool
+    {
+        if (! $this->isS3Enabled()) {
+            return false;
+        }
+
+        $localPath = $assetVersion->local_path ?: $this->getAssetVersionLocalPath($assetVersion);
+
+        if (! file_exists($localPath)) {
+            throw new RuntimeException("Local asset archive not found: {$localPath}");
+        }
+
+        $s3Key = $this->getAssetVersionS3Key($assetVersion);
+        $this->uploadToS3($localPath, $s3Key);
+
+        $assetVersion->update([
+            'storage_disk' => 's3',
+            's3_key' => $s3Key,
+            'archived_at' => now(),
+        ]);
+
+        return true;
     }
 
     /**
@@ -552,6 +672,39 @@ class VendorStorageService
         }
 
         return $stats;
+    }
+
+    public function archiveOldVersions(Asset $asset, int $keepCount = 5): void
+    {
+        $versions = $asset->versions()
+            ->orderByDesc('released_at')
+            ->orderByDesc('created_at')
+            ->get();
+
+        $versions->skip($keepCount)->each(function (AssetVersion $version): void {
+            if ($version->local_path && file_exists($version->local_path)) {
+                @unlink($version->local_path);
+            }
+        });
+    }
+
+    public function listVersionsLocal(Asset $asset): array
+    {
+        $basePath = storage_path("app/vendors/{$asset->slug}");
+
+        if (! File::isDirectory($basePath)) {
+            return [];
+        }
+
+        return collect(File::files($basePath))
+            ->map(fn (\SplFileInfo $file): array => [
+                'version' => pathinfo($file->getFilename(), PATHINFO_FILENAME),
+                'path' => $file->getPathname(),
+                'size' => $file->getSize(),
+                'modified_at' => $file->getMTime(),
+            ])
+            ->values()
+            ->all();
     }
 
     /**

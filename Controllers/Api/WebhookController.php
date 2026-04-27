@@ -7,6 +7,7 @@ namespace Core\Mod\Uptelligence\Controllers\Api;
 use Core\Mod\Uptelligence\Jobs\ProcessUptelligenceWebhook;
 use Core\Mod\Uptelligence\Models\UptelligenceWebhook;
 use Core\Mod\Uptelligence\Models\UptelligenceWebhookDelivery;
+use Core\Mod\Uptelligence\Models\Vendor;
 use Core\Mod\Uptelligence\Services\WebhookReceiverService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -34,6 +35,34 @@ class WebhookController extends Controller
     public function __construct(
         protected WebhookReceiverService $service,
     ) {}
+
+    public function receiveVendor(Request $request, Vendor $vendor): Response
+    {
+        $provider = $this->detectProvider($request);
+        $webhook = $vendor->webhooks()
+            ->active()
+            ->when($provider !== null, fn ($query) => $query->where('provider', $provider))
+            ->first();
+
+        if (! $webhook instanceof UptelligenceWebhook && $provider === UptelligenceWebhook::PROVIDER_GITEA) {
+            $webhook = $vendor->webhooks()
+                ->active()
+                ->where('provider', UptelligenceWebhook::PROVIDER_FORGEJO)
+                ->first();
+        }
+
+        if (! $webhook instanceof UptelligenceWebhook) {
+            Log::warning('Uptelligence webhook received without matching vendor endpoint', [
+                'vendor_id' => $vendor->id,
+                'provider' => $provider,
+                'source_ip' => $request->ip(),
+            ]);
+
+            return response('Webhook not configured', 404);
+        }
+
+        return $this->receive($request, $webhook);
+    }
 
     /**
      * Receive a webhook for a vendor.
@@ -75,11 +104,12 @@ class WebhookController extends Controller
         $signature = $this->extractSignature($request, $webhook->provider);
         $signatureStatus = $this->service->verifySignature($webhook, $payload, $signature);
 
-        if ($signatureStatus === UptelligenceWebhookDelivery::SIGNATURE_INVALID) {
+        if ($this->requiresHmacSignature($webhook, $request) && $signatureStatus !== UptelligenceWebhookDelivery::SIGNATURE_VALID) {
             Log::warning('Uptelligence webhook signature verification failed', [
                 'webhook_id' => $webhook->id,
                 'vendor_id' => $webhook->vendor_id,
                 'source_ip' => $request->ip(),
+                'signature_status' => $signatureStatus,
             ]);
 
             return response('Invalid signature', 401);
@@ -110,6 +140,7 @@ class WebhookController extends Controller
             'status' => UptelligenceWebhookDelivery::STATUS_PENDING,
             'source_ip' => $request->ip(),
             'signature_status' => $signatureStatus,
+            'event' => $eventType,
         ]);
 
         Log::info('Uptelligence webhook received', [
@@ -134,7 +165,9 @@ class WebhookController extends Controller
     protected function extractSignature(Request $request, string $provider): ?string
     {
         return match ($provider) {
-            UptelligenceWebhook::PROVIDER_GITHUB => $this->extractGitHubSignature($request),
+            UptelligenceWebhook::PROVIDER_GITHUB,
+            UptelligenceWebhook::PROVIDER_FORGEJO,
+            UptelligenceWebhook::PROVIDER_GITEA => $this->extractGitHubSignature($request),
             UptelligenceWebhook::PROVIDER_GITLAB => $request->header('X-Gitlab-Token'),
             UptelligenceWebhook::PROVIDER_NPM => $request->header('X-Npm-Signature'),
             UptelligenceWebhook::PROVIDER_PACKAGIST => $request->header('X-Hub-Signature'),
@@ -149,6 +182,11 @@ class WebhookController extends Controller
     {
         // Prefer SHA-256
         $signature = $request->header('X-Hub-Signature-256');
+        if ($signature) {
+            return $signature;
+        }
+
+        $signature = $request->header('X-Gitea-Signature');
         if ($signature) {
             return $signature;
         }
@@ -187,6 +225,8 @@ class WebhookController extends Controller
     {
         return match ($provider) {
             UptelligenceWebhook::PROVIDER_GITHUB => $this->determineGitHubEventType($request, $data),
+            UptelligenceWebhook::PROVIDER_FORGEJO => $this->determineForgejoEventType($request, $data),
+            UptelligenceWebhook::PROVIDER_GITEA => $this->determineGiteaEventType($request, $data),
             UptelligenceWebhook::PROVIDER_GITLAB => $this->determineGitLabEventType($request, $data),
             UptelligenceWebhook::PROVIDER_NPM => $this->determineNpmEventType($data),
             UptelligenceWebhook::PROVIDER_PACKAGIST => $this->determinePackagistEventType($data),
@@ -203,6 +243,27 @@ class WebhookController extends Controller
         $action = $data['action'] ?? 'unknown';
 
         return "github.{$event}.{$action}";
+    }
+
+    /**
+     * Determine Forgejo event type.
+     *
+     * Forgejo uses X-Gitea-Event header (Gitea fork).
+     */
+    protected function determineForgejoEventType(Request $request, array $data): string
+    {
+        $event = $request->header('X-Gitea-Event', $request->header('X-GitHub-Event', 'unknown'));
+        $action = $data['action'] ?? 'unknown';
+
+        return "forgejo.{$event}.{$action}";
+    }
+
+    protected function determineGiteaEventType(Request $request, array $data): string
+    {
+        $event = $request->header('X-Gitea-Event', $request->header('X-GitHub-Event', 'unknown'));
+        $action = $data['action'] ?? 'unknown';
+
+        return "gitea.{$event}.{$action}";
     }
 
     /**
@@ -256,6 +317,36 @@ class WebhookController extends Controller
             ?? 'unknown';
 
         return "custom.{$event}";
+    }
+
+    protected function detectProvider(Request $request): ?string
+    {
+        if ($request->headers->has('X-GitHub-Event')) {
+            return UptelligenceWebhook::PROVIDER_GITHUB;
+        }
+
+        if ($request->headers->has('X-Gitea-Event')) {
+            return UptelligenceWebhook::PROVIDER_GITEA;
+        }
+
+        if ($request->headers->has('X-Gitlab-Event')) {
+            return UptelligenceWebhook::PROVIDER_GITLAB;
+        }
+
+        return null;
+    }
+
+    protected function requiresHmacSignature(UptelligenceWebhook $webhook, Request $request): bool
+    {
+        if (in_array($webhook->provider, [
+            UptelligenceWebhook::PROVIDER_GITHUB,
+            UptelligenceWebhook::PROVIDER_GITEA,
+            UptelligenceWebhook::PROVIDER_FORGEJO,
+        ], true)) {
+            return true;
+        }
+
+        return $request->headers->has('X-GitHub-Event') || $request->headers->has('X-Gitea-Event');
     }
 
     /**
@@ -369,7 +460,8 @@ class WebhookController extends Controller
 
         // Validate based on provider
         $validation = match ($provider) {
-            UptelligenceWebhook::PROVIDER_GITHUB => $this->validateGitHubPayload($data),
+            UptelligenceWebhook::PROVIDER_GITHUB,
+            UptelligenceWebhook::PROVIDER_FORGEJO => $this->validateGitHubPayload($data),
             UptelligenceWebhook::PROVIDER_GITLAB => $this->validateGitLabPayload($data),
             UptelligenceWebhook::PROVIDER_NPM => $this->validateNpmPayload($data),
             UptelligenceWebhook::PROVIDER_PACKAGIST => $this->validatePackagistPayload($data),

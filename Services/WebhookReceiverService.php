@@ -71,11 +71,60 @@ class WebhookReceiverService
     {
         return match ($provider) {
             UptelligenceWebhook::PROVIDER_GITHUB => $this->parseGitHubPayload($payload),
+            UptelligenceWebhook::PROVIDER_GITEA,
+            UptelligenceWebhook::PROVIDER_FORGEJO => $this->parseGiteaPayload($payload),
             UptelligenceWebhook::PROVIDER_GITLAB => $this->parseGitLabPayload($payload),
             UptelligenceWebhook::PROVIDER_NPM => $this->parseNpmPayload($payload),
             UptelligenceWebhook::PROVIDER_PACKAGIST => $this->parsePackagistPayload($payload),
             default => $this->parseCustomPayload($payload),
         };
+    }
+
+    public function receiveGitHubWebhook(array $payload): ?array
+    {
+        return $this->parsePayload(UptelligenceWebhook::PROVIDER_GITHUB, $payload);
+    }
+
+    public function receiveGiteaWebhook(array $payload): ?array
+    {
+        return $this->parsePayload(UptelligenceWebhook::PROVIDER_GITEA, $payload);
+    }
+
+    protected function parseGiteaPayload(array $payload): ?array
+    {
+        $release = $this->parseGitHubPayload($payload);
+
+        if ($release !== null) {
+            $release['event_type'] = str_replace('github.', 'gitea.', $release['event_type']);
+
+            return $release;
+        }
+
+        $ref = (string) ($payload['ref'] ?? '');
+        if (! str_starts_with($ref, 'refs/tags/')) {
+            return null;
+        }
+
+        $tagName = substr($ref, strlen('refs/tags/'));
+        $version = $this->normaliseVersion($tagName);
+
+        if (! $version || ! $this->isVersionTag($tagName)) {
+            return null;
+        }
+
+        return [
+            'event_type' => 'gitea.tag.push',
+            'version' => $version,
+            'tag_name' => $tagName,
+            'release_name' => $tagName,
+            'body' => null,
+            'url' => $payload['repository']['html_url'] ?? null,
+            'prerelease' => false,
+            'draft' => false,
+            'published_at' => null,
+            'author' => $payload['sender']['login'] ?? null,
+            'raw' => $payload,
+        ];
     }
 
     /**

@@ -52,12 +52,18 @@ class UptelligenceWebhook extends Model
 
     public const PROVIDER_CUSTOM = 'custom';
 
+    public const PROVIDER_FORGEJO = 'forgejo';
+
+    public const PROVIDER_GITEA = 'gitea';
+
     public const PROVIDERS = [
         self::PROVIDER_GITHUB,
         self::PROVIDER_GITLAB,
         self::PROVIDER_NPM,
         self::PROVIDER_PACKAGIST,
         self::PROVIDER_CUSTOM,
+        self::PROVIDER_FORGEJO,
+        self::PROVIDER_GITEA,
     ];
 
     // Maximum consecutive failures before auto-disable
@@ -65,26 +71,35 @@ class UptelligenceWebhook extends Model
 
     protected $fillable = [
         'uuid',
+        'workspace_id',
         'vendor_id',
         'provider',
+        'url',
+        'events',
         'secret',
         'previous_secret',
         'secret_rotated_at',
         'grace_period_seconds',
         'is_active',
+        'active',
         'failure_count',
         'last_received_at',
+        'last_triggered_at',
         'settings',
     ];
 
     protected $casts = [
         'is_active' => 'boolean',
+        'active' => 'boolean',
         'failure_count' => 'integer',
         'grace_period_seconds' => 'integer',
+        'workspace_id' => 'integer',
         'last_received_at' => 'datetime',
+        'last_triggered_at' => 'datetime',
         'secret_rotated_at' => 'datetime',
         'secret' => 'encrypted',
         'previous_secret' => 'encrypted',
+        'events' => 'array',
         'settings' => 'array',
     ];
 
@@ -153,7 +168,7 @@ class UptelligenceWebhook extends Model
 
     public function isActive(): bool
     {
-        return $this->is_active === true;
+        return ($this->is_active ?? $this->active) === true;
     }
 
     public function isCircuitBroken(): bool
@@ -221,7 +236,9 @@ class UptelligenceWebhook extends Model
     protected function verifyAgainstSecret(string $payload, string $signature, string $secret): bool
     {
         return match ($this->provider) {
-            self::PROVIDER_GITHUB => $this->verifyGitHubSignature($payload, $signature, $secret),
+            self::PROVIDER_GITHUB,
+            self::PROVIDER_FORGEJO,
+            self::PROVIDER_GITEA => $this->verifyGitHubSignature($payload, $signature, $secret),
             self::PROVIDER_GITLAB => $this->verifyGitLabSignature($signature, $secret),
             self::PROVIDER_NPM => $this->verifyNpmSignature($payload, $signature, $secret),
             self::PROVIDER_PACKAGIST => $this->verifyPackagistSignature($payload, $signature, $secret),
@@ -313,6 +330,10 @@ class UptelligenceWebhook extends Model
     public function markReceived(): void
     {
         $this->update(['last_received_at' => now()]);
+
+        if (\Illuminate\Support\Facades\Schema::hasColumn($this->getTable(), 'last_triggered_at')) {
+            $this->forceFill(['last_triggered_at' => now()])->save();
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -383,6 +404,8 @@ class UptelligenceWebhook extends Model
             self::PROVIDER_NPM => 'npm',
             self::PROVIDER_PACKAGIST => 'Packagist',
             self::PROVIDER_CUSTOM => 'Custom',
+            self::PROVIDER_FORGEJO => 'Forgejo',
+            self::PROVIDER_GITEA => 'Gitea',
             default => ucfirst($this->provider),
         };
     }
@@ -398,6 +421,8 @@ class UptelligenceWebhook extends Model
             self::PROVIDER_NPM => 'cube',
             self::PROVIDER_PACKAGIST => 'archive-box',
             self::PROVIDER_CUSTOM => 'cog-6-tooth',
+            self::PROVIDER_FORGEJO => 'code-bracket',
+            self::PROVIDER_GITEA => 'code-bracket',
             default => 'globe-alt',
         };
     }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Core\Mod\Uptelligence\Models;
 
+use Core\Mod\Uptelligence\Data\AIAnalysis;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -60,19 +61,25 @@ class DiffCache extends Model
 
     protected $fillable = [
         'version_release_id',
+        'asset_id',
+        'from_version',
+        'to_version',
         'file_path',
         'change_type',
         'category',
         'diff_content',
+        'diff_hash',
         'new_content',
         'lines_added',
         'lines_removed',
+        'expires_at',
         'metadata',
     ];
 
     protected $casts = [
         'lines_added' => 'integer',
         'lines_removed' => 'integer',
+        'expires_at' => 'datetime',
         'metadata' => 'array',
     ];
 
@@ -80,6 +87,11 @@ class DiffCache extends Model
     public function versionRelease(): BelongsTo
     {
         return $this->belongsTo(VersionRelease::class);
+    }
+
+    public function asset(): BelongsTo
+    {
+        return $this->belongsTo(Asset::class);
     }
 
     // Scopes
@@ -123,34 +135,37 @@ class DiffCache extends Model
         }
 
         // Controllers
-        if (str_contains($path, '/controllers/') || str_ends_with($path, 'controller.php')) {
+        if (str_contains($path, '/controllers/') || str_starts_with($path, 'controllers/') || str_ends_with($path, 'controller.php')) {
             return self::CATEGORY_CONTROLLER;
         }
 
         // Models
-        if (str_contains($path, '/models/') || str_ends_with($path, 'model.php')) {
+        if (str_contains($path, '/models/') || str_starts_with($path, 'models/') || str_ends_with($path, 'model.php')) {
             return self::CATEGORY_MODEL;
         }
 
         // Views/Templates
         if (str_contains($path, '/views/') ||
+            str_starts_with($path, 'views/') ||
             str_contains($path, '/themes/') ||
+            str_starts_with($path, 'themes/') ||
             str_ends_with($path, '.blade.php')) {
             return self::CATEGORY_VIEW;
         }
 
         // Migrations
-        if (str_contains($path, '/migrations/') || str_contains($path, '/database/')) {
+        if (str_contains($path, '/migrations/') || str_starts_with($path, 'migrations/') ||
+            str_contains($path, '/database/') || str_starts_with($path, 'database/')) {
             return self::CATEGORY_MIGRATION;
         }
 
         // Config
-        if (str_contains($path, '/config/') || str_ends_with($path, 'config.php')) {
+        if (str_contains($path, '/config/') || str_starts_with($path, 'config/') || str_ends_with($path, 'config.php')) {
             return self::CATEGORY_CONFIG;
         }
 
         // Routes
-        if (str_contains($path, '/routes/') || str_ends_with($path, 'routes.php')) {
+        if (str_contains($path, '/routes/') || str_starts_with($path, 'routes/') || str_ends_with($path, 'routes.php')) {
             return self::CATEGORY_ROUTE;
         }
 
@@ -222,6 +237,25 @@ class DiffCache extends Model
         }
 
         return preg_match_all('/^-[^-]/m', $this->diff_content);
+    }
+
+    public function cachedAIAnalysis(): ?array
+    {
+        $analysis = data_get($this->metadata ?? [], 'ai_analysis');
+
+        return is_array($analysis) ? $analysis : null;
+    }
+
+    public function cacheAIAnalysis(AIAnalysis $analysis, string $cacheKey): bool
+    {
+        $metadata = $this->metadata ?? [];
+        $metadata['analysis_cache_key'] = $cacheKey;
+        $metadata['ai_analysis'] = $analysis->toArray();
+        $metadata['ai_analyzed_at'] = now()->toIso8601String();
+
+        $this->metadata = $metadata;
+
+        return $this->save();
     }
 
     public function getChangeTypeIcon(): string

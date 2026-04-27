@@ -48,7 +48,11 @@ class UptelligenceWebhookDelivery extends Model
 
     public const STATUS_COMPLETED = 'completed';
 
+    public const STATUS_SUCCESS = 'success';
+
     public const STATUS_FAILED = 'failed';
+
+    public const STATUS_RETRYING = 'retrying';
 
     public const STATUS_SKIPPED = 'skipped';
 
@@ -65,6 +69,7 @@ class UptelligenceWebhookDelivery extends Model
     protected $fillable = [
         'webhook_id',
         'vendor_id',
+        'event',
         'event_type',
         'provider',
         'version',
@@ -73,9 +78,13 @@ class UptelligenceWebhookDelivery extends Model
         'parsed_data',
         'status',
         'error_message',
+        'response_code',
+        'response_body',
         'source_ip',
         'signature_status',
         'processed_at',
+        'delivered_at',
+        'retries',
         'retry_count',
         'max_retries',
         'next_retry_at',
@@ -85,7 +94,9 @@ class UptelligenceWebhookDelivery extends Model
         'payload' => 'array',
         'parsed_data' => 'array',
         'processed_at' => 'datetime',
+        'delivered_at' => 'datetime',
         'next_retry_at' => 'datetime',
+        'retries' => 'integer',
         'retry_count' => 'integer',
         'max_retries' => 'integer',
     ];
@@ -126,7 +137,7 @@ class UptelligenceWebhookDelivery extends Model
 
     public function scopeCompleted($query)
     {
-        return $query->where('status', self::STATUS_COMPLETED);
+        return $query->whereIn('status', [self::STATUS_COMPLETED, self::STATUS_SUCCESS]);
     }
 
     public function scopeFailed($query)
@@ -181,6 +192,10 @@ class UptelligenceWebhookDelivery extends Model
             'processed_at' => now(),
             'error_message' => null,
         ];
+
+        if (\Illuminate\Support\Facades\Schema::hasColumn($this->getTable(), 'delivered_at')) {
+            $update['delivered_at'] = now();
+        }
 
         if ($parsedData !== null) {
             $update['parsed_data'] = $parsedData;
@@ -238,7 +253,7 @@ class UptelligenceWebhookDelivery extends Model
 
     public function isCompleted(): bool
     {
-        return $this->status === self::STATUS_COMPLETED;
+        return in_array($this->status, [self::STATUS_COMPLETED, self::STATUS_SUCCESS], true);
     }
 
     public function isFailed(): bool

@@ -6,6 +6,7 @@ namespace Core\Mod\Uptelligence\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
@@ -35,6 +36,12 @@ class Asset extends Model
 
     public const TYPE_MANUAL = 'manual';
 
+    public const TYPE_LIBRARY = 'library';
+
+    public const TYPE_PLUGIN = 'plugin';
+
+    public const TYPE_SERVICE = 'service';
+
     // Licence types
     public const LICENCE_LIFETIME = 'lifetime';
 
@@ -45,12 +52,15 @@ class Asset extends Model
     public const LICENCE_TRIAL = 'trial';
 
     protected $fillable = [
+        'vendor_id',
         'slug',
         'name',
         'description',
         'type',
         'package_name',
         'registry_url',
+        'repository_url',
+        'docs_url',
         'licence_type',
         'licence_expires_at',
         'licence_meta',
@@ -69,6 +79,7 @@ class Asset extends Model
         'licence_meta' => 'array',
         'build_config' => 'array',
         'used_in_projects' => 'array',
+        'vendor_id' => 'integer',
         'licence_expires_at' => 'date',
         'last_checked_at' => 'datetime',
         'auto_update' => 'boolean',
@@ -76,9 +87,34 @@ class Asset extends Model
     ];
 
     // Relationships
+    public function vendor(): BelongsTo
+    {
+        return $this->belongsTo(Vendor::class);
+    }
+
     public function versions(): HasMany
     {
         return $this->hasMany(AssetVersion::class);
+    }
+
+    public function analysisLogs(): HasMany
+    {
+        return $this->hasMany(AnalysisLog::class);
+    }
+
+    public function diffCaches(): HasMany
+    {
+        return $this->hasMany(DiffCache::class);
+    }
+
+    public function upstreamTodos(): HasMany
+    {
+        return $this->hasMany(UpstreamTodo::class);
+    }
+
+    public function patternVariants(): HasMany
+    {
+        return $this->hasMany(PatternVariant::class);
     }
 
     // Scopes

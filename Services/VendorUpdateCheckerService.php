@@ -42,6 +42,11 @@ class VendorUpdateCheckerService
         return $results;
     }
 
+    public function checkAll(): void
+    {
+        $this->checkAllVendors();
+    }
+
     /**
      * Check a single vendor for updates.
      *

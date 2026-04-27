@@ -16,9 +16,11 @@ use Illuminate\Console\Command;
  */
 class SendDigestsCommand extends Command
 {
-    protected $signature = 'uptelligence:send-digests
+    protected $signature = 'upstream:send-digests
                             {--frequency= : Process only a specific frequency (daily, weekly, monthly)}
                             {--dry-run : Show what would happen without sending}';
+
+    protected $aliases = ['uptelligence:send-digests'];
 
     protected $description = 'Send Uptelligence digest emails to subscribed users';
 

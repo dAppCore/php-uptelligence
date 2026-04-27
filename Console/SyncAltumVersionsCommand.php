@@ -23,9 +23,11 @@ use Illuminate\Console\Command;
  */
 class SyncAltumVersionsCommand extends Command
 {
-    protected $signature = 'uptelligence:sync-altum-versions
+    protected $signature = 'upstream:sync-altum-versions
                             {--dry-run : Show what would change without writing to the database}
                             {--path= : Base path to the SaaS services directory}';
+
+    protected $aliases = ['uptelligence:sync-altum-versions'];
 
     protected $description = 'Sync deployed AltumCode product and plugin versions from source files';
 

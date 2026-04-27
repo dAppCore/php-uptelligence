@@ -1,6 +1,39 @@
 <?php
 
+declare(strict_types=1);
+
 return [
+    /*
+    |--------------------------------------------------------------------------
+    | Registry Configuration
+    |--------------------------------------------------------------------------
+    | RFC-facing registry settings. Existing services still read the provider
+    | specific github/gitea keys below, but the uptelligence.analysis namespace
+    | is the canonical config surface for new dependency intelligence flows.
+    */
+    'registries' => [
+        'github' => [
+            'url' => env('UPTELLIGENCE_GITHUB_URL', 'https://api.github.com'),
+            'token' => env('GITHUB_TOKEN'),
+        ],
+        'gitea' => [
+            'url' => env('GITEA_API_URL', env('GITEA_URL', 'https://forge.lthn.ai').'/api/v1'),
+            'token' => env('GITEA_TOKEN', env('FORGE_TOKEN')),
+        ],
+        'altumcode' => [
+            'url' => env('ALTUMCODE_URL', 'https://altumcode.com'),
+        ],
+    ],
+
+    'analysis' => [
+        'ai_model' => env('UPTELLIGENCE_AI_MODEL', 'claude-opus-4-7'),
+        'max_diff_size' => 50 * 1024,
+        'cache_ttl' => 30 * 24 * 60 * 60,
+    ],
+
+    'issue_platform' => env('UPTELLIGENCE_ISSUE_PLATFORM', 'forge'),
+    'webhook_secret' => env('UPTELLIGENCE_WEBHOOK_SECRET'),
+
     /*
     |--------------------------------------------------------------------------
     | Vendor Storage Configuration
@@ -158,7 +191,7 @@ return [
     */
     'ai' => [
         'provider' => env('UPSTREAM_AI_PROVIDER', 'anthropic'),
-        'model' => env('UPSTREAM_AI_MODEL', 'claude-sonnet-4-20250514'),
+        'model' => env('UPSTREAM_AI_MODEL', env('UPTELLIGENCE_AI_MODEL', 'claude-opus-4-7')),
         'max_tokens' => 4096,
         'temperature' => 0.3,
 

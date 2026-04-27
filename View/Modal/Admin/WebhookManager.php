@@ -132,7 +132,7 @@ class WebhookManager extends Component
     public function createWebhook(): void
     {
         $this->validate([
-            'createVendorId' => 'required|exists:vendors,id',
+            'createVendorId' => 'required|exists:uptelligence_vendors,id',
             'createProvider' => 'required|in:'.implode(',', UptelligenceWebhook::PROVIDERS),
         ]);
 

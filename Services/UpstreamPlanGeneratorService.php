@@ -4,10 +4,17 @@ declare(strict_types=1);
 
 namespace Core\Mod\Uptelligence\Services;
 
-use Core\Mod\Uptelligence\Models\UpstreamTodo;
+use Core\Mod\Uptelligence\Data\UpstreamPlan;
+use Core\Mod\Uptelligence\Data\UpstreamTodo as UpstreamTodoData;
+use Core\Mod\Uptelligence\Models\Asset;
+use Core\Mod\Uptelligence\Models\UpstreamTodo as UpstreamTodoModel;
 use Core\Mod\Uptelligence\Models\Vendor;
 use Core\Mod\Uptelligence\Models\VersionRelease;
+use Illuminate\Contracts\Support\Arrayable;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Str;
+use Mod\Agentic\Models\AgentPhase;
+use Mod\Agentic\Models\AgentPlan;
 
 /**
  * Upstream Plan Generator Service - creates agent plans from version release analysis.
@@ -19,19 +26,312 @@ use Illuminate\Support\Collection;
  */
 class UpstreamPlanGeneratorService
 {
+    private const PRIORITY_ORDER = [
+        'high' => 0,
+        'medium' => 1,
+        'low' => 2,
+    ];
+
+    /**
+     * Generate a structured migration plan for one tracked asset.
+     *
+     * @param  Collection<int, mixed>|array<int, mixed>  $todos
+     */
+    public function plan(Asset $asset, Collection|array $todos): UpstreamPlan
+    {
+        $normalisedTodos = collect($todos)
+            ->map(fn (mixed $todo): ?UpstreamTodoData => $this->normaliseTodo($asset, $todo))
+            ->filter()
+            ->sortBy([
+                fn (UpstreamTodoData $todo): int => self::PRIORITY_ORDER[$todo->priority] ?? self::PRIORITY_ORDER['low'],
+                fn (UpstreamTodoData $todo): int => $this->kindOrder($todo->kind),
+                fn (UpstreamTodoData $todo): string => $todo->title,
+            ])
+            ->values();
+
+        $todosByPriority = [
+            'high' => $normalisedTodos->where('priority', 'high')->values(),
+            'medium' => $normalisedTodos->where('priority', 'medium')->values(),
+            'low' => $normalisedTodos->where('priority', 'low')->values(),
+        ];
+
+        $breakingCount = $normalisedTodos
+            ->filter(fn (UpstreamTodoData $todo): bool => $this->isBreakingTodo($todo))
+            ->count();
+        $estimatedEffortHours = (int) $normalisedTodos->sum('estimatedEffortHours');
+
+        return new UpstreamPlan(
+            assetKey: $this->assetKey($asset),
+            assetName: $this->assetName($asset),
+            todos: $normalisedTodos,
+            todosByPriority: $todosByPriority,
+            migrationChecklist: $this->buildMigrationChecklist($asset, $normalisedTodos),
+            estimatedEffortHours: $estimatedEffortHours,
+            breakingCount: $breakingCount,
+            strategy: $this->buildStrategy($asset, $normalisedTodos, $breakingCount, $estimatedEffortHours),
+            metadata: [
+                'from_version' => $asset->installed_version,
+                'to_version' => $asset->latest_version,
+                'todo_count' => $normalisedTodos->count(),
+                'priority_counts' => collect($todosByPriority)->map->count()->all(),
+            ],
+        );
+    }
+
+    protected function normaliseTodo(Asset $asset, mixed $todo): ?UpstreamTodoData
+    {
+        if ($todo instanceof UpstreamTodoData) {
+            return $todo;
+        }
+
+        if ($todo instanceof UpstreamTodoModel) {
+            return new UpstreamTodoData(
+                assetKey: $this->assetKey($asset),
+                assetName: $this->assetName($asset),
+                kind: $todo->type,
+                priority: $this->normalisePriority($todo->priority),
+                title: $todo->title,
+                description: $todo->description ?? '',
+                fromVersion: $todo->from_version ?? $asset->installed_version,
+                toVersion: $todo->to_version ?? $asset->latest_version,
+                issuePlatform: $todo->github_issue_number ? 'github' : null,
+                issueId: $todo->github_issue_number,
+                issueStatus: $todo->github_issue_number ? 'created' : 'pending',
+                estimatedEffortHours: $this->estimatedEffortHours($todo->effort),
+                suggestedSolution: $todo->port_notes ? ['steps' => [$todo->port_notes]] : [],
+                metadata: [
+                    'files' => $todo->files ?? [],
+                    'dependencies' => $todo->dependencies ?? [],
+                    'source_todo_id' => $todo->id,
+                ],
+            );
+        }
+
+        if ($todo instanceof Arrayable) {
+            $todo = $todo->toArray();
+        } elseif (is_object($todo)) {
+            $todo = get_object_vars($todo);
+        }
+
+        if (! is_array($todo)) {
+            return null;
+        }
+
+        $title = trim((string) (data_get($todo, 'title') ?? ''));
+        if ($title === '') {
+            return null;
+        }
+
+        return new UpstreamTodoData(
+            assetKey: (string) (data_get($todo, 'asset_key') ?? data_get($todo, 'assetKey') ?? $this->assetKey($asset)),
+            assetName: (string) (data_get($todo, 'asset_name') ?? data_get($todo, 'assetName') ?? $this->assetName($asset)),
+            kind: $this->normaliseKind((string) (data_get($todo, 'kind') ?? data_get($todo, 'type') ?? 'breaking')),
+            priority: $this->normalisePriority(data_get($todo, 'priority', 'medium')),
+            title: $title,
+            description: (string) (data_get($todo, 'description') ?? ''),
+            fromVersion: data_get($todo, 'from_version') ?? data_get($todo, 'fromVersion') ?? $asset->installed_version,
+            toVersion: data_get($todo, 'to_version') ?? data_get($todo, 'toVersion') ?? $asset->latest_version,
+            issuePlatform: data_get($todo, 'issue_platform') ?? data_get($todo, 'issuePlatform'),
+            issueUrl: data_get($todo, 'issue_url') ?? data_get($todo, 'issueUrl'),
+            issueId: data_get($todo, 'issue_id') ?? data_get($todo, 'issueId'),
+            issueStatus: (string) (data_get($todo, 'issue_status') ?? data_get($todo, 'issueStatus') ?? 'pending'),
+            dedupeKey: (string) (data_get($todo, 'dedupe_key') ?? data_get($todo, 'dedupeKey') ?? ''),
+            titleHash: (string) (data_get($todo, 'title_hash') ?? data_get($todo, 'titleHash') ?? ''),
+            estimatedEffortHours: $this->estimatedEffortHours(data_get($todo, 'estimated_effort_hours') ?? data_get($todo, 'estimatedEffortHours') ?? data_get($todo, 'effort', 1)),
+            suggestedSolution: $this->normaliseArray(data_get($todo, 'suggested_solution') ?? data_get($todo, 'suggestedSolution') ?? []),
+            metadata: $this->normaliseArray(data_get($todo, 'metadata', [])),
+        );
+    }
+
+    /**
+     * @param  Collection<int, UpstreamTodoData>  $todos
+     * @return array<int, array<string, mixed>>
+     */
+    protected function buildMigrationChecklist(Asset $asset, Collection $todos): array
+    {
+        $steps = [
+            [
+                'order' => 1,
+                'priority' => 'setup',
+                'action' => "Review {$this->assetName($asset)} release notes and linked upstream issues.",
+            ],
+            [
+                'order' => 2,
+                'priority' => 'setup',
+                'action' => 'Create a migration branch and capture the current test baseline.',
+            ],
+            [
+                'order' => 3,
+                'priority' => 'setup',
+                'action' => "Update {$this->assetName($asset)} from ".($asset->installed_version ?? 'current').' to '.($asset->latest_version ?? 'target').'.',
+            ],
+        ];
+
+        $order = count($steps) + 1;
+
+        foreach (['high', 'medium', 'low'] as $priority) {
+            foreach ($todos->where('priority', $priority)->values() as $todo) {
+                $steps[] = [
+                    'order' => $order,
+                    'priority' => $priority,
+                    'action' => $this->todoChecklistAction($todo),
+                    'todo_title' => $todo->title,
+                    'kind' => $todo->kind,
+                    'issue_url' => $todo->issueUrl,
+                ];
+                $order++;
+            }
+        }
+
+        $steps[] = [
+            'order' => $order,
+            'priority' => 'verify',
+            'action' => 'Run the focused regression suite and any package-specific build checks.',
+        ];
+        $order++;
+
+        $steps[] = [
+            'order' => $order,
+            'priority' => 'verify',
+            'action' => 'Document residual risks, close linked issues, and record the installed version.',
+        ];
+
+        return $steps;
+    }
+
+    protected function todoChecklistAction(UpstreamTodoData $todo): string
+    {
+        return match (true) {
+            $this->isBreakingTodo($todo) => "Resolve breaking change: {$todo->title}.",
+            $todo->kind === 'security' => "Apply security update: {$todo->title}.",
+            default => "Complete {$todo->priority} priority task: {$todo->title}.",
+        };
+    }
+
+    /**
+     * @param  Collection<int, UpstreamTodoData>  $todos
+     */
+    protected function buildStrategy(Asset $asset, Collection $todos, int $breakingCount, int $estimatedEffortHours): string
+    {
+        if ($todos->isEmpty()) {
+            return "No upstream todos were generated for {$this->assetName($asset)}; perform a standard version bump and smoke test.";
+        }
+
+        $strategy = "Migrate {$this->assetName($asset)} by resolving high priority work before medium and low priority tasks.";
+
+        if ($breakingCount > 0) {
+            $strategy .= " {$breakingCount} breaking change(s) must be handled before rollout.";
+        }
+
+        $strategy .= " Estimated effort: {$estimatedEffortHours} hour(s).";
+
+        return $strategy;
+    }
+
+    protected function normalisePriority(mixed $priority): string
+    {
+        if (is_numeric($priority)) {
+            return match (true) {
+                (int) $priority >= 7 => 'high',
+                (int) $priority >= 4 => 'medium',
+                default => 'low',
+            };
+        }
+
+        $priority = Str::lower((string) $priority);
+
+        return match (true) {
+            str_contains($priority, 'critical'),
+            str_contains($priority, 'high') => 'high',
+            str_contains($priority, 'medium') => 'medium',
+            str_contains($priority, 'low') => 'low',
+            default => 'low',
+        };
+    }
+
+    protected function normaliseKind(string $kind): string
+    {
+        return Str::of($kind)
+            ->lower()
+            ->replace([' ', '-'], '_')
+            ->trim()
+            ->toString();
+    }
+
+    protected function kindOrder(string $kind): int
+    {
+        return match ($kind) {
+            'breaking', 'breaking_change' => 0,
+            'security' => 1,
+            default => 2,
+        };
+    }
+
+    protected function isBreakingTodo(UpstreamTodoData $todo): bool
+    {
+        return in_array($todo->kind, ['breaking', 'breaking_change', 'incompatible', 'major'], true)
+            || str_contains(Str::lower($todo->title), 'breaking');
+    }
+
+    protected function estimatedEffortHours(mixed $effort): int
+    {
+        if (is_numeric($effort)) {
+            return max(1, (int) $effort);
+        }
+
+        return match (Str::lower((string) $effort)) {
+            'low', 'small' => 1,
+            'high', 'large' => 8,
+            default => 4,
+        };
+    }
+
+    protected function normaliseArray(mixed $value): array
+    {
+        if ($value instanceof Collection) {
+            return $value->all();
+        }
+
+        if ($value instanceof Arrayable) {
+            return $value->toArray();
+        }
+
+        if (is_array($value)) {
+            return $value;
+        }
+
+        return $value === null ? [] : [$value];
+    }
+
+    protected function assetKey(Asset $asset): string
+    {
+        $key = $asset->slug
+            ?? $asset->package_name
+            ?? ($asset->id ? (string) $asset->id : null)
+            ?? $asset->name
+            ?? 'asset';
+
+        return Str::slug((string) $key) ?: 'asset';
+    }
+
+    protected function assetName(Asset $asset): string
+    {
+        return (string) ($asset->name ?? $asset->package_name ?? $this->assetKey($asset));
+    }
+
     /**
      * Check if the Agentic module is available.
      */
     protected function agenticModuleAvailable(): bool
     {
-        return class_exists(\Mod\Agentic\Models\AgentPlan::class)
-            && class_exists(\Mod\Agentic\Models\AgentPhase::class);
+        return class_exists(AgentPlan::class)
+            && class_exists(AgentPhase::class);
     }
 
     /**
      * Generate an AgentPlan from a version release analysis.
      *
-     * @return \Mod\Agentic\Models\AgentPlan|null Returns null if Agentic module unavailable or no todos
+     * @return AgentPlan|null Returns null if Agentic module unavailable or no todos
      */
     public function generateFromRelease(VersionRelease $release, array $options = []): mixed
     {
@@ -42,7 +342,7 @@ class UpstreamPlanGeneratorService
         }
 
         $vendor = $release->vendor;
-        $todos = UpstreamTodo::where('vendor_id', $vendor->id)
+        $todos = UpstreamTodoModel::where('vendor_id', $vendor->id)
             ->where('from_version', $release->previous_version)
             ->where('to_version', $release->version)
             ->where('status', 'pending')
@@ -59,7 +359,7 @@ class UpstreamPlanGeneratorService
     /**
      * Generate an AgentPlan from vendor's pending todos.
      *
-     * @return \Mod\Agentic\Models\AgentPlan|null Returns null if Agentic module unavailable or no todos
+     * @return AgentPlan|null Returns null if Agentic module unavailable or no todos
      */
     public function generateFromVendor(Vendor $vendor, array $options = []): mixed
     {
@@ -69,7 +369,7 @@ class UpstreamPlanGeneratorService
             return null;
         }
 
-        $todos = UpstreamTodo::where('vendor_id', $vendor->id)
+        $todos = UpstreamTodoModel::where('vendor_id', $vendor->id)
             ->where('status', 'pending')
             ->orderByDesc('priority')
             ->get();
@@ -86,7 +386,7 @@ class UpstreamPlanGeneratorService
     /**
      * Create AgentPlan from a collection of todos.
      *
-     * @return \Mod\Agentic\Models\AgentPlan
+     * @return AgentPlan
      */
     protected function createPlanFromTodos(
         Vendor $vendor,
@@ -100,7 +400,7 @@ class UpstreamPlanGeneratorService
 
         // Create plan title
         $title = $options['title'] ?? "Port {$vendor->name} {$version}";
-        $slug = \Mod\Agentic\Models\AgentPlan::generateSlug($title);
+        $slug = AgentPlan::generateSlug($title);
 
         // Build context
         $context = $includeContext ? $this->buildContext($vendor, $release, $todos) : null;
@@ -109,12 +409,12 @@ class UpstreamPlanGeneratorService
         $groupedTodos = $this->groupTodosForPhases($todos);
 
         // Create the plan
-        $plan = \Mod\Agentic\Models\AgentPlan::create([
+        $plan = AgentPlan::create([
             'slug' => $slug,
             'title' => $title,
             'description' => $this->buildDescription($vendor, $release, $todos),
             'context' => $context,
-            'status' => $activateImmediately ? \Mod\Agentic\Models\AgentPlan::STATUS_ACTIVE : \Mod\Agentic\Models\AgentPlan::STATUS_DRAFT,
+            'status' => $activateImmediately ? AgentPlan::STATUS_ACTIVE : AgentPlan::STATUS_DRAFT,
             'metadata' => [
                 'source' => 'upstream_analysis',
                 'vendor_id' => $vendor->id,
@@ -218,7 +518,7 @@ class UpstreamPlanGeneratorService
     /**
      * Create AgentPhases from grouped todos.
      *
-     * @param  \Mod\Agentic\Models\AgentPlan  $plan
+     * @param  AgentPlan  $plan
      */
     protected function createPhasesFromGroupedTodos(mixed $plan, array $groupedPhases): void
     {
@@ -242,13 +542,13 @@ class UpstreamPlanGeneratorService
             })->sortByDesc('priority')->values()->toArray();
 
             // Create the phase
-            \Mod\Agentic\Models\AgentPhase::create([
+            AgentPhase::create([
                 'agent_plan_id' => $plan->id,
                 'order' => $order,
                 'name' => $config['name'],
                 'description' => $config['description'] ?? null,
                 'tasks' => $tasks,
-                'status' => \Mod\Agentic\Models\AgentPhase::STATUS_PENDING,
+                'status' => AgentPhase::STATUS_PENDING,
                 'metadata' => [
                     'phase_key' => $phaseKey,
                     'todo_count' => $todos->count(),
@@ -260,7 +560,7 @@ class UpstreamPlanGeneratorService
         }
 
         // Add review phase
-        \Mod\Agentic\Models\AgentPhase::create([
+        AgentPhase::create([
             'agent_plan_id' => $plan->id,
             'order' => $order,
             'name' => 'Review & Testing',
@@ -271,7 +571,7 @@ class UpstreamPlanGeneratorService
                 ['name' => 'Update documentation', 'status' => 'pending'],
                 ['name' => 'Create PR/merge request', 'status' => 'pending'],
             ],
-            'status' => \Mod\Agentic\Models\AgentPhase::STATUS_PENDING,
+            'status' => AgentPhase::STATUS_PENDING,
             'metadata' => [
                 'phase_key' => 'review',
                 'is_final' => true,
@@ -365,7 +665,7 @@ class UpstreamPlanGeneratorService
     /**
      * Sync AgentPlan tasks with UpstreamTodo status.
      *
-     * @param  \Mod\Agentic\Models\AgentPlan  $plan
+     * @param  AgentPlan  $plan
      */
     public function syncPlanWithTodos(mixed $plan): int
     {
@@ -386,7 +686,7 @@ class UpstreamPlanGeneratorService
                     continue;
                 }
 
-                $todo = UpstreamTodo::find($task['todo_id']);
+                $todo = UpstreamTodoModel::find($task['todo_id']);
                 if (! $todo) {
                     continue;
                 }
@@ -418,7 +718,7 @@ class UpstreamPlanGeneratorService
      */
     public function markTodoAsPorted(int $todoId): bool
     {
-        $todo = UpstreamTodo::find($todoId);
+        $todo = UpstreamTodoModel::find($todoId);
         if (! $todo) {
             return false;
         }

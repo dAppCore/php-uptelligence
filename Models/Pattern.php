@@ -30,6 +30,16 @@ class Pattern extends Model
 
     public const CATEGORY_TEMPLATE = 'template';
 
+    public const CATEGORY_SECURITY = 'security';
+
+    public const CATEGORY_BREAKING = 'breaking';
+
+    public const CATEGORY_FEATURE = 'feature';
+
+    public const CATEGORY_PERFORMANCE = 'perf';
+
+    public const CATEGORY_DOCS = 'docs';
+
     // Source types
     public const SOURCE_PURCHASED = 'purchased';
 
@@ -42,6 +52,8 @@ class Pattern extends Model
         'name',
         'description',
         'category',
+        'severity',
+        'detection_rule',
         'tags',
         'language',
         'code',
@@ -58,6 +70,7 @@ class Pattern extends Model
 
     protected $casts = [
         'tags' => 'array',
+        'detection_rule' => 'array',
         'required_assets' => 'array',
         'quality_score' => 'decimal:2',
         'is_vetted' => 'boolean',

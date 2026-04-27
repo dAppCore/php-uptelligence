@@ -32,3 +32,7 @@ Route::prefix('uptelligence/webhook')->name('api.uptelligence.webhooks.')->group
         ->name('test')
         ->middleware('throttle:uptelligence-webhooks');
 });
+
+Route::post('/webhooks/uptelligence/{vendor}', [WebhookController::class, 'receiveVendor'])
+    ->name('webhooks.uptelligence.receive')
+    ->middleware('throttle:uptelligence-webhooks');
