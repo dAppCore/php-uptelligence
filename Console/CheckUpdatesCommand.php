@@ -55,11 +55,10 @@ class CheckUpdatesCommand extends Command
             $this->outputTable($vendorResults, $assetResults);
         }
 
-        // Return appropriate exit code
-        $hasUpdates = collect($vendorResults)->contains(fn ($r) => $r['has_update'] ?? false)
-            || collect($assetResults)->contains(fn ($r) => $r['has_update'] ?? false);
-
-        return $hasUpdates ? self::SUCCESS : self::SUCCESS;
+        // Command always exits SUCCESS — having updates available is information,
+        // not an error. Consumers needing to act on update presence should parse
+        // the table output (or the JSON output if --json is set).
+        return self::SUCCESS;
     }
 
     /**
