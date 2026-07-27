@@ -15,6 +15,19 @@ return new class extends Migration
     {
         Schema::disableForeignKeyConstraints();
 
+        // This migration has been renumbered. Databases migrated before the
+        // change recorded it as 0001_01_01_000003_create_uptelligence_webhooks_table,
+        // so under its current name Laravel sees unrun work and tries to create
+        // tables that are already there — "Table 'uptelligence_webhooks' already
+        // exists" — which halts the run and everything queued behind it.
+        //
+        // Both tables are created together, so their presence means this
+        // migration has already done its job under its old name. Recording it
+        // and moving on is the correct outcome; a fresh database still gets them.
+        if (Schema::hasTable('uptelligence_webhooks') && Schema::hasTable('uptelligence_webhook_deliveries')) {
+            return;
+        }
+
         // 1. Webhook endpoints per vendor
         Schema::create('uptelligence_webhooks', function (Blueprint $table) {
             $table->id();
