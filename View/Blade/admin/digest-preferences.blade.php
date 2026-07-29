@@ -122,10 +122,10 @@
                 <flux:subheading class="mb-4">Only include tasks at or above this priority level</flux:subheading>
 
                 <flux:select wire:model.live="minPriority">
-                    <flux:option :value="null">All priorities</flux:option>
-                    <flux:option value="4">Medium and above (4+)</flux:option>
-                    <flux:option value="6">High and above (6+)</flux:option>
-                    <flux:option value="8">Critical only (8+)</flux:option>
+                    <flux:select.option :value="null">All priorities</flux:select.option>
+                    <flux:select.option value="4">Medium and above (4+)</flux:select.option>
+                    <flux:select.option value="6">High and above (6+)</flux:select.option>
+                    <flux:select.option value="8">Critical only (8+)</flux:select.option>
                 </flux:select>
             </flux:card>
 
