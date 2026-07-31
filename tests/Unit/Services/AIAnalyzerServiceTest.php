@@ -93,7 +93,7 @@ describe('_Good', function (): void {
         ]);
 
         $cache = makeDiffCache();
-        $analysis = (new AIAnalyzerService)->analyze(makeAnalysisDiff($cache, 'good-key'));
+        $analysis = (new AIAnalyzerService())->analyze(makeAnalysisDiff($cache, 'good-key'));
 
         expect($analysis)->toBeInstanceOf(AIAnalysis::class)
             ->and($analysis->severity)->toBe('critical')
@@ -127,7 +127,7 @@ describe('_Bad', function (): void {
             ],
         ]);
 
-        $analysis = (new AIAnalyzerService)->analyze(makeAnalysisDiff($cache, 'cached-key'));
+        $analysis = (new AIAnalyzerService())->analyze(makeAnalysisDiff($cache, 'cached-key'));
 
         expect($analysis->cached)->toBeTrue()
             ->and($analysis->summary)->toBe('Cached summary.');
@@ -146,7 +146,7 @@ describe('_Ugly', function (): void {
         ]);
 
         $cache = makeDiffCache();
-        $analysis = (new AIAnalyzerService)->analyze(makeAnalysisDiff($cache, 'ugly-key'));
+        $analysis = (new AIAnalyzerService())->analyze(makeAnalysisDiff($cache, 'ugly-key'));
 
         expect($analysis->severity)->toBe('critical')
             ->and($analysis->metadata['provider'])->toBe('heuristic')

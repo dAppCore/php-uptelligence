@@ -33,7 +33,7 @@ describe('_Good', function (): void {
         writeDiffFixture($new.'/app/Services/BillingService.php', "<?php\nclass BillingService\n{\n    public function charge(int \$amount, string \$currency): bool\n    {\n        return true;\n    }\n}\n");
         writeDiffFixture($new.'/database/migrations/2026_04_25_000001_create_orders_table.php', "<?php\nreturn new class {};\n");
 
-        $result = (new DiffAnalyzerService)->diff($old, $new);
+        $result = (new DiffAnalyzerService())->diff($old, $new);
 
         expect($result)->toBeInstanceOf(DiffResult::class)
             ->and($result->changedFiles)->toContain('app/Services/BillingService.php')
@@ -59,7 +59,7 @@ describe('_Bad', function (): void {
         writeDiffFixture($old.'/public/images/logo.png', "old\0binary");
         writeDiffFixture($new.'/public/images/logo.png', "new\0binary");
 
-        $result = (new DiffAnalyzerService)->diff($old, $new);
+        $result = (new DiffAnalyzerService())->diff($old, $new);
 
         expect($result->changedFiles)->toBeEmpty()
             ->and($result->filesChanged)->toBe(0)
@@ -75,7 +75,7 @@ describe('_Ugly', function (): void {
         File::makeDirectory($old, 0755, true);
         File::makeDirectory($new, 0755, true);
 
-        expect(fn () => (new DiffAnalyzerService)->diff($old."\0", $new))
+        expect(fn () => (new DiffAnalyzerService())->diff($old."\0", $new))
             ->toThrow(InvalidArgumentException::class);
     });
 });

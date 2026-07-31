@@ -14,7 +14,7 @@ beforeEach(function () {
     $this->app->make(\Illuminate\Contracts\Console\Kernel::class)
         ->registerCommand($this->app->make(SyncAltumVersionsCommand::class));
 
-    (new AltumCodeVendorSeeder)->run();
+    (new AltumCodeVendorSeeder())->run();
 });
 
 it('updates product versions from init.php files', function () {

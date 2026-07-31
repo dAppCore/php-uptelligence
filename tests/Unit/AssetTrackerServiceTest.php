@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Core\Mod\Uptelligence\Tests\Unit;
+namespace Tests\Unit;
 
 use Core\Mod\Uptelligence\Models\Asset;
 use Core\Mod\Uptelligence\Services\AssetTrackerService;
@@ -24,7 +24,7 @@ class AssetTrackerServiceTest extends \Orchestra\Testbench\TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        $this->service = new AssetTrackerService;
+        $this->service = new AssetTrackerService();
     }
 
     protected function getPackageProviders($app): array

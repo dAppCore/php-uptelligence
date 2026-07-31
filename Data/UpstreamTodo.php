@@ -29,7 +29,8 @@ final readonly class UpstreamTodo implements Arrayable
         public int $estimatedEffortHours = 1,
         public array $suggestedSolution = [],
         public array $metadata = [],
-    ) {}
+    ) {
+    }
 
     public function toArray(): array
     {

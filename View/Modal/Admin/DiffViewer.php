@@ -63,7 +63,7 @@ class DiffViewer extends Component
             // promises an Eloquent one. The empty case is the only path that
             // ever returned the wrong type, so the page threw exactly when
             // there was nothing to show — which is how it looks on first load.
-            return new \Illuminate\Database\Eloquent\Collection;
+            return new \Illuminate\Database\Eloquent\Collection();
         }
 
         return VersionRelease::where('vendor_id', $this->vendorId)

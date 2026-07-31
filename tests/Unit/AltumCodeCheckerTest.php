@@ -7,7 +7,7 @@ use Core\Mod\Uptelligence\Services\VendorUpdateCheckerService;
 use Illuminate\Support\Facades\Http;
 
 beforeEach(function () {
-    $this->service = new VendorUpdateCheckerService;
+    $this->service = new VendorUpdateCheckerService();
 });
 
 // ---------------------------------------------------------------------------

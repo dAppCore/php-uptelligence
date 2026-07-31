@@ -34,7 +34,8 @@ class WebhookController extends Controller
 
     public function __construct(
         protected WebhookReceiverService $service,
-    ) {}
+    ) {
+    }
 
     public function receiveVendor(Request $request, Vendor $vendor): Response
     {

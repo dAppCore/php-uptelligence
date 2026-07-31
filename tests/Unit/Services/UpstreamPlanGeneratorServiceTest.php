@@ -6,9 +6,12 @@ use Core\Mod\Uptelligence\Data\UpstreamPlan;
 use Core\Mod\Uptelligence\Data\UpstreamTodo;
 use Core\Mod\Uptelligence\Models\Asset;
 use Core\Mod\Uptelligence\Services\UpstreamPlanGeneratorService;
-use Tests\TestCase;
 
-uses(TestCase::class);
+// tests/Pest.php already applies uses(TestCase::class)->in('Feature', 'Unit')
+// globally — a second, explicit uses(TestCase::class) here made Pest refuse
+// to load this file at all ("Test case Tests\TestCase can not be used ...
+// already uses the test case Tests\TestCase"), taking the whole suite down
+// with it since PHPUnit's suite builder aborts on a single unloadable file.
 
 describe('_Good', function (): void {
     it('groups todos by priority and orders the migration checklist', function (): void {
@@ -50,7 +53,7 @@ describe('_Good', function (): void {
             ),
         ]);
 
-        $plan = (new UpstreamPlanGeneratorService)->plan($asset, $todos);
+        $plan = (new UpstreamPlanGeneratorService())->plan($asset, $todos);
 
         $replaceStep = collect($plan->migrationChecklist)->firstWhere('todo_title', 'Replace removed modal API');
         $adoptStep = collect($plan->migrationChecklist)->firstWhere('todo_title', 'Adopt new table density option');
@@ -75,7 +78,7 @@ describe('_Bad', function (): void {
             'type' => Asset::TYPE_FONT,
         ]);
 
-        $plan = (new UpstreamPlanGeneratorService)->plan($asset, []);
+        $plan = (new UpstreamPlanGeneratorService())->plan($asset, []);
 
         expect($plan->todos)->toBeEmpty()
             ->and($plan->todosByPriority['high'])->toBeEmpty()
@@ -96,7 +99,7 @@ describe('_Ugly', function (): void {
             'latest_version' => '2.0.0',
         ]);
 
-        $plan = (new UpstreamPlanGeneratorService)->plan($asset, [
+        $plan = (new UpstreamPlanGeneratorService())->plan($asset, [
             [
                 'kind' => 'feature',
                 'priority' => 5,

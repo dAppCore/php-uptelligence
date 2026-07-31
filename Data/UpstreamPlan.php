@@ -22,7 +22,8 @@ final readonly class UpstreamPlan implements Arrayable
         public int $breakingCount,
         public string $strategy,
         public array $metadata = [],
-    ) {}
+    ) {
+    }
 
     public function toArray(): array
     {

@@ -26,7 +26,8 @@ class SendUptelligenceDigest extends Notification implements ShouldQueue
         public Collection $releases,
         public array $todosByPriority,
         public int $securityCount,
-    ) {}
+    ) {
+    }
 
     /**
      * Get the notification's delivery channels.
@@ -43,7 +44,7 @@ class SendUptelligenceDigest extends Notification implements ShouldQueue
      */
     public function toMail(object $notifiable): MailMessage
     {
-        $message = (new MailMessage)
+        $message = (new MailMessage())
             ->subject($this->getSubject())
             ->greeting($this->getGreeting());
 
@@ -78,7 +79,10 @@ class SendUptelligenceDigest extends Notification implements ShouldQueue
         }
 
         // Call to action
-        $message->action('View Dashboard', route('hub.admin.uptelligence.dashboard'));
+        // The dashboard route is registered bare as 'hub.admin.uptelligence'
+        // (routes/admin.php), not 'hub.admin.uptelligence.dashboard' — every
+        // digest email threw RouteNotFoundException building this link.
+        $message->action('View Dashboard', route('hub.admin.uptelligence'));
 
         // Footer
         $message->line('---');

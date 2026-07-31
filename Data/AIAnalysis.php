@@ -20,7 +20,8 @@ final readonly class AIAnalysis implements Arrayable
         public array $findings = [],
         public bool $cached = false,
         public array $metadata = [],
-    ) {}
+    ) {
+    }
 
     public static function fromArray(array $data, bool $cached = false): self
     {

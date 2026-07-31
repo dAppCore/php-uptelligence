@@ -23,7 +23,8 @@ class NewReleaseDetected extends Notification implements ShouldQueue
         public Vendor $vendor,
         public string $version,
         public array $releaseData = [],
-    ) {}
+    ) {
+    }
 
     /**
      * Get the notification's delivery channels.
@@ -40,7 +41,7 @@ class NewReleaseDetected extends Notification implements ShouldQueue
      */
     public function toMail(object $notifiable): MailMessage
     {
-        $message = (new MailMessage)
+        $message = (new MailMessage())
             ->subject($this->getSubject())
             ->greeting('New Release Detected');
 

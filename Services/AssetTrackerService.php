@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace Core\Mod\Uptelligence\Services;
 
 use Carbon\Carbon;
+use Core\Mod\Uptelligence\Models\AnalysisLog;
 use Core\Mod\Uptelligence\Models\Asset;
 use Core\Mod\Uptelligence\Models\AssetVersion;
-use Core\Mod\Uptelligence\Models\AnalysisLog;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Process;

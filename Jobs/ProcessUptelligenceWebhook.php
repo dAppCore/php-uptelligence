@@ -21,7 +21,10 @@ use Illuminate\Support\Facades\Log;
  */
 class ProcessUptelligenceWebhook implements ShouldQueue
 {
-    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
+    use Dispatchable;
+    use InteractsWithQueue;
+    use Queueable;
+    use SerializesModels;
 
     /**
      * Number of times the job may be attempted.

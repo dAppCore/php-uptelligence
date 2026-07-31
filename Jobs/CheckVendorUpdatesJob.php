@@ -22,7 +22,10 @@ use Illuminate\Support\Facades\Log;
  */
 class CheckVendorUpdatesJob implements ShouldQueue
 {
-    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
+    use Dispatchable;
+    use InteractsWithQueue;
+    use Queueable;
+    use SerializesModels;
 
     /**
      * Whether to also check package assets.

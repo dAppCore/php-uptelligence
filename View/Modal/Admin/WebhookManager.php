@@ -90,7 +90,7 @@ class WebhookManager extends Component
             // Same as DiffViewer::releases(): collect() is a Support
             // collection and this promises an Eloquent one, so the page threw
             // whenever nothing was selected — the state it opens in.
-            return new \Illuminate\Database\Eloquent\Collection;
+            return new \Illuminate\Database\Eloquent\Collection();
         }
 
         return UptelligenceWebhookDelivery::where('webhook_id', $this->selectedWebhookId)

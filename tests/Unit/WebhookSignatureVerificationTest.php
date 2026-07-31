@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Core\Mod\Uptelligence\Tests\Unit;
+namespace Tests\Unit;
 
 use Core\Mod\Uptelligence\Models\UptelligenceWebhook;
 use PHPUnit\Framework\Attributes\DataProvider;

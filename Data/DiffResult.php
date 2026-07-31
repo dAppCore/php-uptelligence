@@ -20,7 +20,8 @@ final readonly class DiffResult implements Arrayable
         public int $deletions = 0,
         public array $byFile = [],
         public array $metadata = [],
-    ) {}
+    ) {
+    }
 
     public static function fromArray(array $data): self
     {

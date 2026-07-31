@@ -6,9 +6,12 @@ use Core\Mod\Uptelligence\Data\UpstreamTodo;
 use Core\Mod\Uptelligence\Models\Asset;
 use Core\Mod\Uptelligence\Services\IssueGeneratorService;
 use Illuminate\Support\Facades\Http;
-use Tests\TestCase;
 
-uses(TestCase::class);
+// tests/Pest.php already applies uses(TestCase::class)->in('Feature', 'Unit')
+// globally — a second, explicit uses(TestCase::class) here made Pest refuse
+// to load this file at all ("Test case Tests\TestCase can not be used ...
+// already uses the test case Tests\TestCase"), taking the whole suite down
+// with it since PHPUnit's suite builder aborts on a single unloadable file.
 
 describe('_Good', function (): void {
     it('creates a Mantis issue for a breaking analysis finding', function (): void {
@@ -32,7 +35,7 @@ describe('_Good', function (): void {
             'latest_version' => '12.0.0',
         ]);
 
-        $todos = (new IssueGeneratorService)->generate($asset, [
+        $todos = (new IssueGeneratorService())->generate($asset, [
             'from_version' => '11.0.0',
             'to_version' => '12.0.0',
             'findings' => [
@@ -72,7 +75,7 @@ describe('_Bad', function (): void {
             'type' => Asset::TYPE_NPM,
         ]);
 
-        $todos = (new IssueGeneratorService)->generate($asset, [
+        $todos = (new IssueGeneratorService())->generate($asset, [
             'findings' => [
                 [
                     'kind' => 'feature',
@@ -98,7 +101,7 @@ describe('_Ugly', function (): void {
             'type' => Asset::TYPE_COMPOSER,
         ]);
 
-        $todos = (new IssueGeneratorService)->generate($asset, [
+        $todos = (new IssueGeneratorService())->generate($asset, [
             'existing_open_issues' => [
                 [
                     'state' => 'open',

@@ -9,7 +9,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 uses(RefreshDatabase::class);
 
 it('seeds 4 altum products', function () {
-    $seeder = new AltumCodeVendorSeeder;
+    $seeder = new AltumCodeVendorSeeder();
     $seeder->run();
 
     $products = Vendor::where('source_type', Vendor::SOURCE_LICENSED)
@@ -32,7 +32,7 @@ it('seeds 4 altum products', function () {
 });
 
 it('seeds 13 altum plugins', function () {
-    $seeder = new AltumCodeVendorSeeder;
+    $seeder = new AltumCodeVendorSeeder();
     $seeder->run();
 
     $plugins = Vendor::where('source_type', Vendor::SOURCE_PLUGIN)
@@ -50,7 +50,7 @@ it('seeds 13 altum plugins', function () {
 });
 
 it('is idempotent — running twice still yields 17 total', function () {
-    $seeder = new AltumCodeVendorSeeder;
+    $seeder = new AltumCodeVendorSeeder();
 
     $seeder->run();
     expect(Vendor::count())->toBe(17);
