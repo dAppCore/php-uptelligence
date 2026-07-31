@@ -22,25 +22,30 @@ return new class () extends Migration {
      * holds a CSS selector or a regular expression. Plenty of software
      * announces releases only on its own download page, and that is exactly the
      * kind of dependency nobody notices has gone stale.
+     *
+     * The table is uptelligence_vendors, not vendors — every table in this
+     * package carries the prefix. A guard naming the wrong one returns early
+     * and adds nothing, which is a migration that reports success and does
+     * not run.
      */
     public function up(): void
     {
-        if (! Schema::hasTable('vendors') || Schema::hasColumn('vendors', 'check_selector')) {
+        if (! Schema::hasTable('uptelligence_vendors') || Schema::hasColumn('uptelligence_vendors', 'check_selector')) {
             return;
         }
 
-        Schema::table('vendors', function (Blueprint $table): void {
+        Schema::table('uptelligence_vendors', function (Blueprint $table): void {
             $table->string('check_selector')->nullable()->after('registry_id');
         });
     }
 
     public function down(): void
     {
-        if (! Schema::hasTable('vendors') || ! Schema::hasColumn('vendors', 'check_selector')) {
+        if (! Schema::hasTable('uptelligence_vendors') || ! Schema::hasColumn('uptelligence_vendors', 'check_selector')) {
             return;
         }
 
-        Schema::table('vendors', function (Blueprint $table): void {
+        Schema::table('uptelligence_vendors', function (Blueprint $table): void {
             $table->dropColumn('check_selector');
         });
     }

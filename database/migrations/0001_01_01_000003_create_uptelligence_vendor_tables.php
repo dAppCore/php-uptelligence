@@ -18,8 +18,7 @@ use Illuminate\Support\Facades\Schema;
  * - Uptime monitoring (for server health tracking)
  * - Vendor tracking (for upstream dependency intelligence)
  */
-return new class extends Migration
-{
+return new class () extends Migration {
     /**
      * Run the migrations.
      */
