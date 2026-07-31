@@ -60,6 +60,12 @@ class VendorUpdateCheckerService
             $this->isAltumPlatform($vendor) && $vendor->isPlugin() => $this->checkAltumPlugin($vendor),
             $vendor->isOss() && $this->isGitHubUrl($vendor->git_repo_url) => $this->checkGitHub($vendor),
             $vendor->isOss() && $this->isGiteaUrl($vendor->git_repo_url) => $this->checkGitea($vendor),
+            // Registries and pages, which between them cover most of what an
+            // application actually depends on. Before these, anything not on
+            // GitHub or Gitea fell through to "unsupported" and was never
+            // checked at all.
+            $this->hasRegistry($vendor) => $this->checkRegistry($vendor),
+            $this->hasScrapeTarget($vendor) => $this->checkScrape($vendor),
             default => $this->skipCheck($vendor),
         };
 
@@ -524,6 +530,85 @@ class VendorUpdateCheckerService
             'has_update' => false,
             'message' => "Rate limit exceeded. Retry after {$seconds} seconds",
         ];
+    }
+
+    /**
+     * Check a vendor published to a package registry.
+     *
+     * registry names which one, registry_id is the name within it — the
+     * Composer package, npm package or Go module path.
+     *
+     * @return array{status: string, current: ?string, latest: ?string, has_update: bool, message?: string}
+     */
+    protected function checkRegistry(Vendor $vendor): array
+    {
+        if (RateLimiter::tooManyAttempts('upstream-registry', 30)) {
+            return $this->rateLimitedResult(RateLimiter::availableIn('upstream-registry'));
+        }
+
+        RateLimiter::hit('upstream-registry');
+
+        $registry = strtolower((string) $vendor->registry);
+        $identifier = (string) $vendor->registry_id;
+        $resolver = app(RegistryVersionResolver::class);
+
+        $latest = match ($registry) {
+            'packagist', 'composer' => $resolver->packagist($identifier),
+            'npm' => $resolver->npm($identifier),
+            'go', 'goproxy' => $resolver->goModule($identifier),
+            'api' => $resolver->jsonApi($identifier, (string) ($vendor->check_selector ?: 'version')),
+            default => null,
+        };
+
+        if ($latest === null) {
+            return $this->errorResult("Could not read a version for {$identifier} from {$registry}");
+        }
+
+        return $this->buildResult(vendor: $vendor, latestVersion: $latest, releaseInfo: [
+            'name' => $latest,
+            'html_url' => $vendor->url,
+        ]);
+    }
+
+    /**
+     * Check a vendor whose only version signal is a page on their site.
+     *
+     * @return array{status: string, current: ?string, latest: ?string, has_update: bool, message?: string}
+     */
+    protected function checkScrape(Vendor $vendor): array
+    {
+        if (RateLimiter::tooManyAttempts('upstream-registry', 30)) {
+            return $this->rateLimitedResult(RateLimiter::availableIn('upstream-registry'));
+        }
+
+        RateLimiter::hit('upstream-registry');
+
+        $latest = app(RegistryVersionResolver::class)->scrape(
+            (string) $vendor->url,
+            (string) $vendor->check_selector,
+        );
+
+        if ($latest === null) {
+            return $this->errorResult('Could not find a version on '.$vendor->url);
+        }
+
+        return $this->buildResult(vendor: $vendor, latestVersion: $latest, releaseInfo: [
+            'name' => $latest,
+            'html_url' => $vendor->url,
+        ]);
+    }
+
+    protected function hasRegistry(Vendor $vendor): bool
+    {
+        return in_array(strtolower((string) $vendor->registry), ['packagist', 'composer', 'npm', 'go', 'goproxy', 'api'], true)
+            && (string) $vendor->registry_id !== '';
+    }
+
+    protected function hasScrapeTarget(Vendor $vendor): bool
+    {
+        return strtolower((string) $vendor->source_type) === 'scrape'
+            && (string) $vendor->url !== ''
+            && (string) $vendor->check_selector !== '';
     }
 
     /**

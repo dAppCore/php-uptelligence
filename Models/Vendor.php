@@ -51,6 +51,7 @@ class Vendor extends Model
         'url',
         'registry',
         'registry_id',
+        'check_selector',
         'source_type',
         'plugin_platform',
         'git_repo_url',
